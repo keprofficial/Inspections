@@ -1,0 +1,251 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                     FLUTTER INSTALLATION - NOW!                            ║
+║                                                                            ║
+║                    STEP-BY-STEP (Copy & Follow)                           ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+🎯 WHAT YOU'LL DO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Download Flutter (600MB ZIP)
+2. Extract to C:\flutter
+3. Add to Windows PATH
+4. Verify installation
+5. Run your Kepr app
+
+Total time: ~15-20 minutes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📥 STEP 1: DOWNLOAD FLUTTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open your browser
+2. Go to: https://flutter.dev/docs/get-started/install/windows
+3. Click the blue "Download Flutter SDK" button
+4. Choose "Windows" (stable channel)
+5. Download the ZIP file (~600MB)
+   - Save to: Downloads folder
+   - Wait for download to complete
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📂 STEP 2: EXTRACT FLUTTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open File Explorer
+2. Go to: Downloads (where you downloaded the ZIP)
+3. Right-click the flutter_windows_*.zip file
+4. Select: "Extract All"
+5. Choose destination: C:\ (root drive)
+   ✓ IMPORTANT: Extract directly to C:\
+   ✓ NOT C:\Users\... or C:\Program Files\
+6. Click Extract
+7. Wait ~5 minutes for extraction
+
+Result: C:\flutter\bin\ (folder created)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 STEP 3: ADD TO WINDOWS PATH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Follow these EXACT steps:
+
+1. Right-click "This PC" or "My Computer" on desktop
+2. Select: "Properties"
+3. Click: "Advanced system settings" (left sidebar)
+4. Click: "Environment Variables" button (bottom right)
+5. Under "System variables" section:
+   - Find the row called "Path"
+   - Click on it (select it)
+   - Click: "Edit" button
+6. In the new window:
+   - Click: "New" button (top right)
+   - Type: C:\flutter\bin
+   - Click: "OK"
+7. Back in Environment Variables window:
+   - Click: "OK"
+8. Back in System Properties:
+   - Click: "OK"
+
+Result: Flutter is now in your PATH!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ CRITICAL: RESTART YOUR COMPUTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After adding Flutter to PATH:
+
+1. CLOSE all PowerShell/CMD windows
+2. CLOSE all other applications
+3. RESTART your computer (very important!)
+4. Wait for restart to complete
+
+DO NOT SKIP THIS STEP!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ STEP 4: VERIFY INSTALLATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After restarting:
+
+1. Open PowerShell (press Windows + X, search "PowerShell")
+2. Type this command:
+   flutter --version
+
+3. You should see output like:
+   Flutter 3.x.x • channel stable
+   Dart 3.x.x
+
+✓ If you see version info → Flutter is installed! ✅
+✗ If you get error → Something went wrong, see troubleshooting below
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 STEP 5: RUN YOUR KEPR APP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before running, you need a device/emulator.
+
+OPTION A: Android Emulator (Recommended, Free)
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 1. Download Android Studio:                                                │
+│    https://developer.android.com/studio                                    │
+│                                                                             │
+│ 2. Install it                                                              │
+│                                                                             │
+│ 3. Open Android Studio                                                     │
+│                                                                             │
+│ 4. Click "Device Manager" (bottom right)                                   │
+│                                                                             │
+│ 5. Click "Create Device"                                                   │
+│    - Choose any phone (Pixel 4 recommended)                                │
+│    - Download system image if prompted                                     │
+│    - Click "Finish"                                                        │
+│                                                                             │
+│ 6. Click green play button to start emulator                               │
+│    - Wait ~2 minutes for emulator to boot                                  │
+│                                                                             │
+│ 7. Keep emulator running, then proceed to "RUN YOUR APP" below             │
+└────────────────────────────────────────────────────────────────────────────┘
+
+OPTION B: Physical Phone (Faster)
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 1. Enable Developer Mode on your Android phone:                            │
+│    Settings → About phone → Tap "Build number" 7 times                     │
+│                                                                             │
+│ 2. Enable USB Debugging:                                                   │
+│    Settings → Developer options → USB Debugging (turn ON)                  │
+│                                                                             │
+│ 3. Connect phone to computer via USB cable                                 │
+│                                                                             │
+│ 4. In PowerShell, verify device is detected:                               │
+│    flutter devices                                                          │
+│    (Should show your phone)                                                │
+└────────────────────────────────────────────────────────────────────────────┘
+
+NOW RUN YOUR APP:
+
+1. Open PowerShell
+2. Navigate to kepr folder:
+   cd c:\Users\purus\OneDrive\Documents\A\kepr
+
+3. Get dependencies:
+   flutter pub get
+   (Wait for this to complete)
+
+4. Run the app:
+   flutter run
+
+   ⏳ First build takes 5-10 minutes (NORMAL!)
+   ✓ App will launch on device/emulator
+   ✓ You'll see the Kepr Sign Up screen
+   ✓ Start testing!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROBLEM: "flutter still not recognized"
+
+SOLUTION:
+1. Make sure you RESTARTED your computer ✓
+2. Close ALL PowerShell windows ✓
+3. Open a NEW PowerShell window ✓
+4. Try: flutter --version
+
+
+PROBLEM: "No connected devices"
+
+SOLUTION:
+1. Start Android emulator (Android Studio → Device Manager → Play button)
+   OR
+2. Connect physical phone via USB cable
+3. In PowerShell, type: flutter devices
+   (Should show your device)
+
+
+PROBLEM: Build is very slow
+
+SOLUTION:
+This is NORMAL for first build!
+• First build: 5-10 minutes (compiling, downloading, etc.)
+• Subsequent builds: 1-2 minutes
+• Keep internet connection active
+
+
+PROBLEM: Gradle error or build fails
+
+SOLUTION:
+1. Run: flutter clean
+2. Run: flutter pub get
+3. Run: flutter run
+
+
+PROBLEM: Can't find flutter path
+
+SOLUTION:
+1. Verify C:\flutter exists
+2. Verify C:\flutter\bin exists
+3. If not, you extracted to wrong location
+4. Re-extract the ZIP to C:\ (root)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ CHECKLIST BEFORE RUNNING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before you run "flutter run":
+
+□ Flutter downloaded and extracted to C:\flutter
+□ C:\flutter\bin added to PATH
+□ Computer restarted
+□ flutter --version works (shows version number)
+□ Android Studio installed (with emulator)
+   OR physical phone connected via USB
+□ Emulator is running or phone is connected
+□ In kepr folder ready to run
+□ Internet connection is active
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎉 YOU'RE READY!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After Flutter is installed and verified:
+
+cd c:\Users\purus\OneDrive\Documents\A\kepr
+flutter pub get
+flutter run
+
+Your Kepr app will launch! 🚀
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Questions? See:
+- FLUTTER_SETUP_VISUAL.txt (visual guide)
+- INSTALL_FLUTTER.md (detailed help)

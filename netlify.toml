@@ -1,0 +1,13 @@
+[build]
+  command = "cd .. && flutter/bin/flutter.bat build web --release"
+  publish = "build/web"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[env]
+  [[env.production.context]]
+    SUPABASE_URL = ""
+    SUPABASE_ANON_KEY = ""

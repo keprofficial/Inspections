@@ -1,0 +1,14 @@
+{
+  "buildCommand": "cd .. && flutter/bin/flutter.bat build web --release",
+  "outputDirectory": "build/web",
+  "env": {
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_ANON_KEY": "@supabase_anon_key"
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

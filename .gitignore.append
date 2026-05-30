@@ -1,0 +1,7 @@
+# Environment variables (NEVER commit keys)
+.env
+.env.production
+.env.local
+
+# Build outputs
+/build/
