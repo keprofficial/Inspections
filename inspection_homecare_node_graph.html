@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KEPR Inspection Homecare Connection Graph</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --ink: #162033;
+      --muted: #667085;
+      --line: #cfd8e5;
+      --brand: #ea6157;
+      --app: #fff1ef;
+      --rpc: #edf4ff;
+      --db: #eef9f4;
+      --storage: #fff7e6;
+      --homecare: #f2efff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      padding: 24px 28px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 30px; letter-spacing: 0; }
+    p { margin: 6px 0 0; color: var(--muted); }
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+    .app { background: var(--app); }
+    .rpc { background: var(--rpc); }
+    .db { background: var(--db); }
+    .storage { background: var(--storage); }
+    .homecare { background: var(--homecare); }
+    .canvas {
+      position: relative;
+      min-height: 940px;
+      background:
+        linear-gradient(#eef2f7 1px, transparent 1px),
+        linear-gradient(90deg, #eef2f7 1px, transparent 1px),
+        #fff;
+      background-size: 28px 28px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: auto;
+      box-shadow: 0 10px 28px rgba(22, 32, 51, .06);
+    }
+    svg {
+      position: absolute;
+      inset: 0;
+      width: 1280px;
+      height: 940px;
+      pointer-events: none;
+    }
+    .node {
+      position: absolute;
+      width: 190px;
+      min-height: 82px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 8px 20px rgba(22, 32, 51, .08);
+    }
+    .node h3 {
+      margin: 0 0 5px;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .node small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .node.app { border-color: #f2b3ad; }
+    .node.rpc { border-color: #b7cff1; }
+    .node.db { border-color: #b4ddca; }
+    .node.storage { border-color: #e8ca86; }
+    .node.homecare { border-color: #c7baf5; }
+    .code {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: rgba(255,255,255,.7);
+      border: 1px solid rgba(0,0,0,.08);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .label {
+      position: absolute;
+      font-size: 12px;
+      color: #42526b;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      white-space: nowrap;
+      box-shadow: 0 4px 10px rgba(22,32,51,.06);
+    }
+    .note {
+      margin-top: 18px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--brand);
+      border-radius: 8px;
+      color: var(--muted);
+    }
+    @media (max-width: 900px) {
+      .canvas { min-height: 940px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KEPR Inspection → Homecare Node Graph</h1>
+    <p>Visual connection map for flat, individual, and society inspections, including critical issue push, image URLs, PDF URLs, and Homecare retrieval.</p>
+  </header>
+
+  <div class="wrap">
+    <div class="legend">
+      <span class="tag"><span class="dot app"></span>Inspection App</span>
+      <span class="tag"><span class="dot rpc"></span>Supabase RPC</span>
+      <span class="tag"><span class="dot db"></span>Supabase Tables</span>
+      <span class="tag"><span class="dot storage"></span>Storage</span>
+      <span class="tag"><span class="dot homecare"></span>Homecare / Resident App</span>
+    </div>
+
+    <div class="canvas">
+      <svg viewBox="0 0 1280 940" preserveAspectRatio="none">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#ea6157"></path>
+          </marker>
+          <style>
+            .edge { fill: none; stroke: #ea6157; stroke-width: 2; marker-end: url(#arrow); }
+            .edge2 { fill: none; stroke: #285c8f; stroke-width: 2; marker-end: url(#arrow); stroke-dasharray: 6 5; }
+            .edge3 { fill: none; stroke: #137a5a; stroke-width: 2; marker-end: url(#arrow); }
+          </style>
+        </defs>
+
+        <path class="edge" d="M210 120 C250 120, 275 120, 315 120"></path>
+        <path class="edge" d="M505 120 C545 120, 570 120, 610 120"></path>
+        <path class="edge" d="M800 120 C840 120, 865 120, 905 120"></path>
+
+        <path class="edge" d="M210 250 C250 250, 275 250, 315 250"></path>
+        <path class="edge" d="M505 250 C545 250, 570 250, 610 250"></path>
+        <path class="edge" d="M800 250 C840 250, 865 250, 905 250"></path>
+
+        <path class="edge" d="M210 380 C250 380, 275 380, 315 380"></path>
+        <path class="edge" d="M505 380 C545 380, 570 380, 610 380"></path>
+
+        <path class="edge2" d="M705 195 C705 215, 705 225, 705 245"></path>
+        <path class="edge2" d="M705 325 C705 345, 705 355, 705 375"></path>
+        <path class="edge2" d="M705 455 C705 500, 710 525, 760 555"></path>
+
+        <path class="edge3" d="M505 555 C545 555, 570 555, 610 555"></path>
+        <path class="edge3" d="M800 555 C840 555, 865 555, 905 555"></path>
+        <path class="edge3" d="M705 640 C705 690, 705 715, 705 765"></path>
+
+        <path class="edge" d="M315 690 C255 690, 230 650, 210 590"></path>
+        <path class="edge" d="M505 690 C545 690, 570 690, 610 690"></path>
+        <path class="edge" d="M800 690 C840 690, 865 690, 905 690"></path>
+        <path class="edge2" d="M990 690 C1050 690, 1080 645, 1080 590"></path>
+      </svg>
+
+      <div class="node app" style="left:20px; top:78px;">
+        <h3>Inspector Login</h3>
+        <small>Mobile + password.</small>
+        <span class="code">SignInScreen</span>
+      </div>
+      <div class="node rpc" style="left:315px; top:78px;">
+        <h3>inspection_app_login</h3>
+        <small>Validates inspector and returns session token.</small>
+      </div>
+      <div class="node db" style="left:610px; top:78px;">
+        <h3>inspection_app_users</h3>
+        <small>Inspector names, mobile numbers, password hashes.</small>
+      </div>
+      <div class="node db" style="left:905px; top:78px;">
+        <h3>inspection_app_sessions</h3>
+        <small>12 hour session token used by submit RPCs.</small>
+      </div>
+
+      <div class="node app" style="left:20px; top:208px;">
+        <h3>Choose Mode</h3>
+        <small>Flat, Individual, or Society inspection.</small>
+      </div>
+      <div class="node db" style="left:315px; top:208px;">
+        <h3>inspection_app_types</h3>
+        <small>Maps type → code prefix → checklist kind.</small>
+        <span class="code">INF / INP / INS</span>
+      </div>
+      <div class="node db" style="left:610px; top:208px;">
+        <h3>properties</h3>
+        <small>Flat mode: flat property. Society mode: society property.</small>
+      </div>
+      <div class="node db" style="left:905px; top:208px;">
+        <h3>checklist tables</h3>
+        <small>Flat + individual use flat checklist. Society uses society checklist.</small>
+      </div>
+
+      <div class="node app" style="left:20px; top:338px;">
+        <h3>Start Inspection</h3>
+        <small>Sends property_id, session token, inspection code, type.</small>
+      </div>
+      <div class="node rpc" style="left:315px; top:338px;">
+        <h3>inspection_app_start</h3>
+        <small>Calls start_inspection_public.</small>
+      </div>
+      <div class="node db" style="left:610px; top:338px;">
+        <h3>inspections</h3>
+        <small>Stores property_id, inspection_type, inspection_code, conducted_at, next_due_at.</small>
+      </div>
+
+      <div class="node app" style="left:20px; top:518px;">
+        <h3>Capture Photos</h3>
+        <small>Camera only. Annotated/compressed image evidence.</small>
+      </div>
+      <div class="node storage" style="left:315px; top:518px;">
+        <h3>inspection-photos bucket</h3>
+        <small>Stores issue images and full PDF reports.</small>
+      </div>
+      <div class="node app" style="left:610px; top:518px;">
+        <h3>Checklist Item State</h3>
+        <small>Stores photo public URLs, severity, notes, selected services.</small>
+      </div>
+      <div class="node db" style="left:905px; top:518px;">
+        <h3>services</h3>
+        <small>Live service catalog with service_code, service name, estimated cost, materials.</small>
+      </div>
+
+      <div class="node app" style="left:20px; top:648px;">
+        <h3>Final Submit</h3>
+        <small>Validates minimum checks, critical service selection, and public URLs.</small>
+      </div>
+      <div class="node rpc" style="left:315px; top:648px;">
+        <h3>inspection_app_submit_report</h3>
+        <small>Receives report_pdf_url and critical issue rows only.</small>
+      </div>
+      <div class="node db" style="left:610px; top:648px;">
+        <h3>inspection_issues</h3>
+        <small>Critical issues pushed for flat and society. Includes service_code, photo_urls, material_codes.</small>
+      </div>
+      <div class="node db" style="left:905px; top:648px;">
+        <h3>inspections.full_report_pdf_url</h3>
+        <small>Full report PDF URL saved back to the inspection row.</small>
+      </div>
+
+      <div class="node homecare" style="left:610px; top:778px;">
+        <h3>Homecare Critical Feed</h3>
+        <small>Reads inspection_issues joined with inspections, properties, services.</small>
+      </div>
+
+      <div class="label" style="left:238px; top:96px;">login payload</div>
+      <div class="label" style="left:532px; top:96px;">validate user</div>
+      <div class="label" style="left:826px; top:96px;">create token</div>
+
+      <div class="label" style="left:226px; top:226px;">type/code map</div>
+      <div class="label" style="left:532px; top:226px;">property scope</div>
+      <div class="label" style="left:820px; top:226px;">load checklist</div>
+
+      <div class="label" style="left:222px; top:356px;">start RPC</div>
+      <div class="label" style="left:520px; top:356px;">insert row</div>
+
+      <div class="label" style="left:224px; top:666px;">critical rows + PDF URL</div>
+      <div class="label" style="left:526px; top:666px;">insert critical only</div>
+      <div class="label" style="left:817px; top:666px;">save report URL</div>
+      <div class="label" style="left:735px; top:738px;">flat + society display</div>
+    </div>
+
+    <div class="note">
+      Society critical issues are not stored in a separate table. They are pushed to the same <strong>inspection_issues</strong> table as flat critical issues. The difference is that the parent <strong>inspections</strong> row has <code>inspection_type = 'society'</code>, <code>inspection_code = 'INS######'</code>, and <code>property_id</code> points to the society property.
+    </div>
+  </div>
+</body>
+</html>

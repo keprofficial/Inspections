@@ -1,16 +1,16 @@
 class SupabaseConfig {
   static const url = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://upzosakzkhgwkhungifq.supabase.co',
+    defaultValue: 'https://egalrsutygdvdmjkvduh.supabase.co',
   );
 
-  static const anonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue: '',
+  static const publishableKey = String.fromEnvironment(
+    'SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_Odebo_AnNPzq9p2Dpy1lGg_3wKogYCh',
   );
 
   static bool get isConfigured =>
       url.isNotEmpty &&
-      anonKey.isNotEmpty &&
-      anonKey != 'YOUR_SUPABASE_ANON_KEY';
+      publishableKey.isNotEmpty &&
+      publishableKey != 'YOUR_SUPABASE_ANON_KEY';
 }

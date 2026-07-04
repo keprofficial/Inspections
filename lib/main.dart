@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'screens/signin_screen.dart';
+import 'services/inspection_draft_storage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,9 +10,10 @@ Future<void> main() async {
   if (SupabaseConfig.isConfigured) {
     await Supabase.initialize(
       url: SupabaseConfig.url,
-      anonKey: SupabaseConfig.anonKey,
+      publishableKey: SupabaseConfig.publishableKey,
     );
   }
+  await InspectionDraftStorage.restoreSession();
 
   runApp(const KeprApp());
 }
@@ -28,7 +29,6 @@ class KeprApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Manrope',
-        textTheme: GoogleFonts.manropeTextTheme(),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFF85F5A),
           brightness: Brightness.light,

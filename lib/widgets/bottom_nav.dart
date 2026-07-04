@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_styles.dart';
 import '../constants/colors.dart';
 
-enum BottomNavTab { home, inspections, profile }
+enum BottomNavTab { home, profile }
 
 class BottomNav extends StatelessWidget {
   final BottomNavTab activeTab;
@@ -39,14 +39,6 @@ class BottomNav extends StatelessWidget {
               icon: Icons.home_outlined,
               activeIcon: Icons.home,
               label: 'Home',
-              onTap: onTabChange,
-            ),
-            _NavItem(
-              tab: BottomNavTab.inspections,
-              activeTab: activeTab,
-              icon: Icons.fact_check_outlined,
-              activeIcon: Icons.fact_check,
-              label: 'Inspections',
               onTap: onTabChange,
             ),
             _NavItem(

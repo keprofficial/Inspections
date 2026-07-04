@@ -1,367 +1,181 @@
 import 'package:flutter/material.dart';
-import '../constants/colors.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_styles.dart';
-import '../widgets/kepr_header.dart';
-import '../widgets/bottom_nav.dart';
-import '../widgets/badge.dart';
+import '../constants/colors.dart';
+import '../services/inspection_draft_storage.dart';
 import '../services/inspection_session.dart';
+import '../services/supabase_repository.dart';
+import '../widgets/badge.dart';
+import '../widgets/bottom_nav.dart';
+import '../widgets/kepr_header.dart';
 import 'signin_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends StatelessWidget {
   final Function(BottomNavTab)? onTabChange;
 
   const ProfileScreen({Key? key, this.onTabChange}) : super(key: key);
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  @override
   Widget build(BuildContext context) {
+    final name = InspectionSession.inspectorName ?? 'Inspector';
+    final initials = _initials(name);
+    final inspectionType = InspectionSession.inspectionMode ?? 'flat';
+    final scopeLabel = inspectionType == 'society'
+        ? 'Scope'
+        : inspectionType == 'individual'
+            ? 'Owner'
+            : 'Flat / Block';
+
     return Scaffold(
       backgroundColor: AppColors.neutral50,
-      appBar: const KeprHeader(),
+      appBar: KeprHeader(
+        title: 'Profile',
+        subtitle: name,
+        onLogoTap: () => onTabChange?.call(BottomNavTab.home),
+        onNotificationTap: () => _showLastLogin(context),
+        onMenuTap: () => onTabChange?.call(BottomNavTab.home),
+      ),
       body: Stack(
         children: [
           SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Profile Card
-                  Container(
-                    clipBehavior: Clip.hardEdge,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.neutral200),
-                      boxShadow: AppColors.shadowSm,
-                    ),
-                    child: Column(
-                      children: [
-                        // Red Background
-                        Container(
-                          height: 80,
-                          color: AppColors.crimson,
-                        ),
-                        // Avatar
-                        Transform.translate(
-                          offset: const Offset(0, -40),
-                          child: Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: AppColors.coral,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'AR',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Name & Title
-                        Text(
-                          'Alex Rivera',
-                          style: AppStyles.headlineMd.copyWith(
-                            color: AppColors.navy,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.neutral200),
+                    boxShadow: AppColors.shadowSm,
+                  ),
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 42,
+                        backgroundColor: AppColors.coral,
+                        child: Text(
+                          initials,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Lead Safety Inspector',
-                          style: AppStyles.bodyMd
-                              .copyWith(color: AppColors.neutral600),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        name,
+                        style: AppStyles.headlineMd.copyWith(
+                          color: AppColors.navy,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 12),
-                        // Badges
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 8,
-                          children: const [
-                            AppBadge(
-                                label: 'Certified',
-                                variant: BadgeVariant.success),
-                            AppBadge(
-                                label: 'Active', variant: BadgeVariant.info),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 8),
+                      const AppBadge(
+                        label: 'Logged In',
+                        variant: BadgeVariant.success,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // Activity Summary
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.neutral200),
-                      boxShadow: AppColors.shadowSm,
-                    ),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                const SizedBox(height: 16),
+                _section(
+                  title: 'Inspector Details',
+                  children: [
+                    _detail(
+                        'Inspector ID', InspectionSession.inspectorId ?? '-'),
+                    _detail(
+                        'Mobile Number', InspectionSession.mobileNumber ?? '-'),
+                    _detail('Last Login', _lastLoginText()),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                FutureBuilder<List<SubmittedInspectionReport>>(
+                  future: _loadReportHistory(),
+                  builder: (context, snapshot) {
+                    final reports = snapshot.data ?? const [];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          'ACTIVITY SUMMARY',
-                          style: AppStyles.labelSm
-                              .copyWith(color: AppColors.neutral500),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
+                        _section(
+                          title: 'Current Inspection',
                           children: [
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: AppColors.neutral50,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      '48',
-                                      style: AppStyles.displayLg.copyWith(
-                                        fontSize: 32,
-                                        color: AppColors.coral,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Completed',
-                                      style: AppStyles.bodySm.copyWith(
-                                        color: AppColors.neutral600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            _detail('Society',
+                                InspectionSession.societyName ?? '-'),
+                            _detail('Inspection Type',
+                                _inspectionTypeLabel(inspectionType)),
+                            _detail(scopeLabel, InspectionSession.flatNumber ?? '-'),
+                            _detail(
+                              'Inspection Code',
+                              InspectionSession.inspectionCode ??
+                                  InspectionSession.keprId ??
+                                  '-',
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: AppColors.neutral50,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      '3',
-                                      style: AppStyles.displayLg.copyWith(
-                                        fontSize: 32,
-                                        color: AppColors.navy,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Active Audits',
-                                      style: AppStyles.bodySm.copyWith(
-                                        color: AppColors.neutral600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.neutral50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Compliance Rating',
-                                    style: AppStyles.labelMd.copyWith(
-                                      color: AppColors.navy,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Row(
-                                children: [
-                                  Text(
-                                    '98%',
-                                    style: AppStyles.displayLg.copyWith(
-                                      fontSize: 24,
-                                      color: AppColors.coral,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.verified,
-                                    color: AppColors.coral,
-                                    size: 24,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Personal Details
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.neutral200),
-                      boxShadow: AppColors.shadowSm,
-                    ),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
+                            _detail('Inspection ID',
+                                InspectionSession.inspectionId ?? '-'),
+                            const SizedBox(height: 4),
                             Text(
-                              'Personal Details',
-                              style: AppStyles.labelMd.copyWith(
-                                color: AppColors.navy,
-                                fontWeight: FontWeight.bold,
+                              'Last 3 Reports',
+                              style: AppStyles.labelSm.copyWith(
+                                color: AppColors.neutral500,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            GestureDetector(
-                              onTap: () {},
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.edit,
-                                      size: 16, color: AppColors.coral),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Edit',
-                                    style: AppStyles.labelSm
-                                        .copyWith(color: AppColors.coral),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            const SizedBox(height: 8),
+                            if (reports.isEmpty)
+                              Text(
+                                'No uploaded reports found yet.',
+                                style: AppStyles.bodySm.copyWith(
+                                  color: AppColors.neutral500,
+                                ),
+                              )
+                            else
+                              for (final report in reports.take(3))
+                                _submittedReportTile(context, report,
+                                    compact: true),
                           ],
                         ),
                         const SizedBox(height: 16),
-                        _buildDetailField('Full Name', 'Alex Rivera'),
-                        const SizedBox(height: 16),
-                        _buildDetailField('Username', '@arivera'),
-                        const SizedBox(height: 16),
-                        _buildDetailField('Mobile Number', '+1 (555) 000-0000'),
-                        const SizedBox(height: 16),
-                        _buildDetailField(
-                            'Email Address', 'alex.rivera@kepr.io'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Settings & Preferences
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.neutral200),
-                      boxShadow: AppColors.shadowSm,
-                    ),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            'Settings & Preferences',
-                            style: AppStyles.labelMd.copyWith(
-                              color: AppColors.navy,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        _buildSettingItem(
-                          Icons.notifications,
-                          'Notification Settings',
-                          'Manage push and email alerts',
-                        ),
-                        Divider(color: AppColors.neutral200, height: 0),
-                        _buildSettingItem(
-                          Icons.security,
-                          'Privacy & Security',
-                          'Update password and 2FA',
-                        ),
-                        Divider(color: AppColors.neutral200, height: 0),
-                        _buildSettingItem(
-                          Icons.help,
-                          'Support & Feedback',
-                          'Contact help center',
+                        _section(
+                          title: 'Inspections Done',
+                          children: reports.isEmpty
+                              ? [
+                                  Text(
+                                    'No submitted reports yet.',
+                                    style: AppStyles.bodySm.copyWith(
+                                      color: AppColors.neutral500,
+                                    ),
+                                  ),
+                                ]
+                              : [
+                                  for (final report in reports)
+                                    _submittedReportTile(context, report),
+                                ],
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Logout Button
-                  GestureDetector(
-                    onTap: () {
-                      InspectionSession.clear();
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const SignInScreen()),
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.neutral200),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.logout, color: AppColors.coral),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Logout',
-                            style: AppStyles.labelMd
-                                .copyWith(color: AppColors.coral),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 100),
-                ],
-              ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    InspectionSession.clear();
+                    await InspectionDraftStorage.clearAll();
+                    if (!context.mounted) return;
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SignInScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Logout'),
+                ),
+                const SizedBox(height: 100),
+              ],
             ),
           ),
-          // Bottom Nav
           Positioned(
             bottom: 0,
             left: 0,
@@ -370,7 +184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               activeTab: BottomNavTab.profile,
               onTabChange: (tab) {
                 if (tab != BottomNavTab.profile) {
-                  widget.onTabChange?.call(tab);
+                  onTabChange?.call(tab);
                 }
               },
             ),
@@ -380,62 +194,206 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildDetailField(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppStyles.labelSm.copyWith(
-            color: AppColors.neutral500,
-            fontWeight: FontWeight.w600,
+  Widget _section({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.neutral200),
+        boxShadow: AppColors.shadowSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppStyles.labelMd.copyWith(
+              color: AppColors.navy,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: AppStyles.bodyMd.copyWith(
-            color: AppColors.navy,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
     );
   }
 
-  Widget _buildSettingItem(IconData icon, String title, String subtitle) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {},
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(icon, color: AppColors.neutral400, size: 24),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppStyles.labelMd.copyWith(color: AppColors.navy),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: AppStyles.bodySm
-                          .copyWith(color: AppColors.neutral500),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: AppColors.neutral400),
-            ],
+  Widget _detail(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
+            ),
           ),
-        ),
+          Expanded(
+            child: Text(
+              value,
+              style: AppStyles.bodySm.copyWith(
+                color: AppColors.navy,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _submittedReportTile(
+      BuildContext context, SubmittedInspectionReport report,
+      {bool compact = false}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.neutral50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            report.societyName,
+            style: AppStyles.labelMd.copyWith(
+              color: AppColors.navy,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${report.flatNumber}'
+            '${report.propertyCode == null ? '' : ' / ${report.propertyCode}'}',
+            style: AppStyles.bodySm.copyWith(color: AppColors.neutral600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _dateTimeText(report.submittedAt),
+            style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
+          ),
+          SizedBox(height: compact ? 4 : 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _openReport(context, report.reportUrl),
+              icon: const Icon(Icons.download),
+              label: Text(compact ? 'Download' : 'Download Report'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<List<SubmittedInspectionReport>> _loadReportHistory() async {
+    final remote =
+        await SupabaseRepository.instance.fetchSubmittedInspectionReports(
+      inspectorId: InspectionSession.inspectorId,
+      inspectorName: InspectionSession.inspectorName,
+      inspectorMobile: InspectionSession.mobileNumber,
+    );
+    final local = await InspectionDraftStorage.loadSubmittedReports();
+    final byId = <String, SubmittedInspectionReport>{};
+    for (final report in [...remote, ...local]) {
+      final key =
+          report.inspectionId.isEmpty ? report.reportUrl : report.inspectionId;
+      byId[key] = report;
+    }
+    final reports = byId.values.toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+    return reports.where(_matchesCurrentInspectionContext).toList();
+  }
+
+  bool _matchesCurrentInspectionContext(SubmittedInspectionReport report) {
+    final currentType = InspectionSession.inspectionMode;
+    if (currentType == null || currentType.isEmpty) return true;
+
+    if ((report.inspectionType ?? '').isNotEmpty &&
+        report.inspectionType != currentType) {
+      return false;
+    }
+
+    final currentPropertyId = InspectionSession.propertyId;
+    if (currentType != 'individual' &&
+        currentPropertyId != null &&
+        currentPropertyId.isNotEmpty &&
+        (report.propertyId ?? '').isNotEmpty) {
+      return report.propertyId == currentPropertyId;
+    }
+
+    return true;
+  }
+
+  Future<void> _openReport(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open report: $url')),
+      );
+    }
+  }
+
+  void _showLastLogin(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Notifications'),
+        content: Text('Last login: ${_lastLoginText()}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _lastLoginText() {
+    final value = InspectionSession.lastLoginAt;
+    if (value == null) return '-';
+    return '${value.day.toString().padLeft(2, '0')}/'
+        '${value.month.toString().padLeft(2, '0')}/'
+        '${value.year} '
+        '${value.hour.toString().padLeft(2, '0')}:'
+        '${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _dateTimeText(DateTime value) {
+    return '${value.day.toString().padLeft(2, '0')}/'
+        '${value.month.toString().padLeft(2, '0')}/'
+        '${value.year} '
+        '${value.hour.toString().padLeft(2, '0')}:'
+        '${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _inspectionTypeLabel(String value) {
+    switch (value) {
+      case 'society':
+        return 'Society Inspection';
+      case 'individual':
+        return 'Individual Home Inspection';
+      default:
+        return 'Flat Inspection';
+    }
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return 'I';
+    return parts.take(2).map((part) => part[0].toUpperCase()).join();
   }
 }

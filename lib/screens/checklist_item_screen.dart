@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../services/supabase_repository.dart';
 import '../widgets/badge.dart';
 import '../widgets/kepr_button.dart';
 import 'camera_capture_screen.dart';
+import 'image_annotation_screen.dart';
 
 class ChecklistItemScreen extends StatefulWidget {
   final InspectionItem item;
@@ -28,8 +30,16 @@ class ChecklistItemScreen extends StatefulWidget {
 class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   late String selectedSeverity;
   late TextEditingController notesController;
+  late TextEditingController serviceSearchController;
   late List<String> photoNames;
+  late List<String> photoEvidenceBase64;
+  List<ServiceMatch> serviceMatches = const [];
+  ServiceMatch? selectedService;
+  List<ServiceMatch> selectedServices = const [];
+  bool _isLoadingServices = false;
   bool _isCapturingPhoto = false;
+  bool _showServiceOptions = false;
+  int _serviceSearchToken = 0;
   final int maxChars = 500;
 
   @override
@@ -38,12 +48,173 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     selectedSeverity = (widget.item.severity ?? 'medium').toLowerCase();
     notesController = TextEditingController(text: widget.item.notes);
     photoNames = [...widget.item.photoPaths];
+    photoEvidenceBase64 = [...widget.item.photoEvidenceBase64];
+    selectedServices = widget.item.selectedServices
+        .map(ServiceMatch.fromSelected)
+        .toList(growable: false);
+    if (selectedServices.isNotEmpty) {
+      selectedService = selectedServices.first;
+    }
+    serviceMatches = selectedService == null ? const [] : [selectedService!];
+    serviceSearchController = TextEditingController(
+      text: widget.item.serviceCode ?? '',
+    );
+    _loadRelatedServices();
   }
 
   @override
   void dispose() {
     notesController.dispose();
+    serviceSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRelatedServices({String? query}) async {
+    if (!_needsServiceEstimate) return;
+    final token = ++_serviceSearchToken;
+    setState(() => _isLoadingServices = true);
+    try {
+      final matches = query == null
+          ? await SupabaseRepository.instance
+              .searchServicesForInspectionItem(widget.item)
+          : await SupabaseRepository.instance.searchServices(
+              query: query,
+              limit: 20,
+            );
+      if (!mounted || token != _serviceSearchToken) return;
+      setState(() {
+        serviceMatches = matches;
+        if (selectedService == null ||
+            !matches.any(
+              (match) => match.serviceCode == selectedService!.serviceCode,
+            )) {
+          selectedService = _pickInitialService(matches);
+        }
+      });
+    } finally {
+      if (mounted && token == _serviceSearchToken) {
+        setState(() => _isLoadingServices = false);
+      }
+    }
+  }
+
+  ServiceMatch? _pickInitialService(List<ServiceMatch> matches) {
+    if (matches.isEmpty) {
+      return null;
+    }
+    final existingCode = widget.item.serviceCode;
+    if (existingCode != null) {
+      for (final match in matches) {
+        if (match.serviceCode == existingCode) return match;
+      }
+    }
+    return matches.first;
+  }
+
+  double get _selectedServicesTotal => selectedServices.fold<double>(
+        0,
+        (sum, service) => sum + service.estimatedCost,
+      );
+
+  List<String> get _selectedMaterialCodes {
+    return selectedServices
+        .expand((service) => service.materialCodes)
+        .toSet()
+        .toList();
+  }
+
+  String? get _selectedServiceCodes {
+    if (selectedServices.isEmpty) return null;
+    return selectedServices.map((service) => service.serviceCode).join(', ');
+  }
+
+  bool get _canMarkCompleted => !_isWallDampnessCheck || photoNames.length >= 2;
+
+  bool get _isCriticalWithoutService =>
+      selectedSeverity == 'critical' && selectedServices.isEmpty;
+
+  bool get _requiresTechnicianNotes =>
+      selectedSeverity == 'high' || selectedSeverity == 'critical';
+
+  bool get _isMissingRequiredNotes =>
+      _requiresTechnicianNotes && notesController.text.trim().isEmpty;
+
+  bool get _isWallDampnessCheck =>
+      widget.item.id.endsWith('-wall-dampness-check');
+
+  void _toggleService(ServiceMatch service) {
+    setState(() {
+      final exists = selectedServices.any(
+        (selected) => selected.serviceCode == service.serviceCode,
+      );
+      if (exists) {
+        selectedServices = selectedServices
+            .where((selected) => selected.serviceCode != service.serviceCode)
+            .toList(growable: false);
+      } else {
+        selectedServices = [...selectedServices, service];
+      }
+      selectedService = selectedServices.isEmpty ? null : selectedServices.last;
+      serviceSearchController.clear();
+      _showServiceOptions = true;
+    });
+  }
+
+  void _addConsultationService() {
+    final consultation = ServiceMatch.consultation(widget.item.name);
+    setState(() {
+      selectedServices = [
+        ...selectedServices.where(
+            (service) => service.serviceCode != consultation.serviceCode),
+        consultation,
+      ];
+      selectedService = consultation;
+      serviceSearchController.text = consultation.name;
+      _showServiceOptions = false;
+    });
+  }
+
+  void _showServicesNotAddedPopup() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Services not added'),
+        content: const Text(
+          'Critical issues must have at least one service selected. Select a catalog service or add Consultation for Rs 150.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _addConsultationService();
+            },
+            child: const Text('Add Consultation'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTechnicianNotesRequiredPopup() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Technician notes required'),
+        content: const Text(
+          'High and critical issues must include technician notes before marking complete.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _capturePhoto() async {
@@ -63,26 +234,56 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
         return;
       }
 
-      final compressedBytes = _compressPhoto(result.bytes);
-      final photoId = await SupabaseRepository.instance.saveInspectionPhoto(
-        bytes: compressedBytes,
-        fileName: result.fileName,
-        itemId: widget.item.id,
-        keprId: InspectionSession.keprId,
-        societyName: InspectionSession.societyName,
-        flatNumber: InspectionSession.flatNumber,
-        propertyId: InspectionSession.propertyId,
-        inspectionId: InspectionSession.inspectionId,
-        areaName: widget.areaName,
+      if (!mounted) return;
+      final annotatedBytes = await Navigator.push<Uint8List>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ImageAnnotationScreen(bytes: result.bytes),
+        ),
       );
+      if (annotatedBytes == null) {
+        if (!mounted) return;
+        setState(() => _isCapturingPhoto = false);
+        return;
+      }
+
+      final compressedBytes = _compressPhoto(annotatedBytes);
+      final localEvidence = base64Encode(compressedBytes);
+      String? photoId;
+      Object? uploadError;
+      try {
+        photoId = await SupabaseRepository.instance.saveInspectionPhoto(
+          bytes: compressedBytes,
+          fileName: result.fileName,
+          itemId: widget.item.id,
+          itemName: widget.item.name,
+          keprId: InspectionSession.keprId,
+          societyName: InspectionSession.societyName,
+          flatNumber: InspectionSession.flatNumber,
+          propertyId: InspectionSession.propertyId,
+          inspectionId: InspectionSession.inspectionId,
+          areaName: widget.areaName,
+        );
+      } catch (error) {
+        uploadError = error;
+      }
 
       if (!mounted) return;
       setState(() {
-        photoNames.add(photoId);
+        photoEvidenceBase64.add(localEvidence);
+        if (photoId != null) {
+          photoNames.add(photoId);
+        }
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Live photo captured and saved')),
+        SnackBar(
+          content: Text(
+            uploadError == null
+                ? 'Live photo uploaded to Supabase and saved'
+                : 'Photo saved locally only. It will appear in PDF, but final submit needs Supabase upload. $uploadError',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -102,6 +303,13 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
         decoded.width > 1280 ? img.copyResize(decoded, width: 1280) : decoded;
 
     return Uint8List.fromList(img.encodeJpg(resized, quality: 68));
+  }
+
+  String _photoLabel(String value) {
+    final uri = Uri.tryParse(value);
+    final segment =
+        uri == null || uri.pathSegments.isEmpty ? value : uri.pathSegments.last;
+    return segment.length <= 28 ? segment : '${segment.substring(0, 25)}...';
   }
 
   @override
@@ -173,12 +381,22 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     child: KeprButton(
                       label: _isCapturingPhoto
                           ? 'Capturing...'
-                          : 'Capture Live Photo',
+                          : _isWallDampnessCheck
+                              ? 'Capture Wall Photo ${photoNames.length + 1}'
+                              : 'Capture Live Photo',
                       icon: const Icon(Icons.photo_camera, color: Colors.white),
                       isLoading: _isCapturingPhoto,
                       onPressed: _isCapturingPhoto ? null : _capturePhoto,
                     ),
                   ),
+                  if (_isWallDampnessCheck) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Capture at least 2 live photos from different walls. Add more photos if the room has more affected walls.',
+                      style: AppStyles.bodySm
+                          .copyWith(color: AppColors.neutral600),
+                    ),
+                  ],
                   if (photoNames.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
@@ -188,7 +406,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                         for (final photoName in photoNames)
                           Chip(
                             avatar: const Icon(Icons.image, size: 18),
-                            label: Text(photoName),
+                            label: Text(_photoLabel(photoName)),
                             onDeleted: () {
                               setState(() => photoNames.remove(photoName));
                             },
@@ -220,11 +438,32 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: _buildSeverityButton(
+                      'No Issues',
+                      'no_issue',
+                      AppColors.success,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Text(
                     'Select the severity level based on the observed issue',
                     style:
                         AppStyles.bodySm.copyWith(color: AppColors.neutral500),
                   ),
+                  if (_isWallDampnessCheck && photoNames.length < 2) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Minimum ${2 - photoNames.length} more wall photo(s) required before completion.',
+                      style: AppStyles.bodySm.copyWith(color: AppColors.error),
+                    ),
+                  ],
+                  if (_needsServiceEstimate) ...[
+                    const SizedBox(height: 16),
+                    _buildServiceEstimateCard(),
+                  ],
                   const SizedBox(height: 24),
                   _buildInfoCard(
                     icon: Icons.construction,
@@ -252,6 +491,17 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     'Technician Notes',
                     style: AppStyles.labelMd.copyWith(color: AppColors.navy),
                   ),
+                  if (_requiresTechnicianNotes) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Required for high and critical issues.',
+                      style: AppStyles.bodySm.copyWith(
+                        color: _isMissingRequiredNotes
+                            ? AppColors.error
+                            : AppColors.neutral500,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   TextField(
                     controller: notesController,
@@ -292,7 +542,16 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     child: KeprButton(
                       label: 'Mark Completed',
                       icon: const Icon(Icons.check, color: Colors.white),
+                      enabled: _canMarkCompleted,
                       onPressed: () {
+                        if (_isMissingRequiredNotes) {
+                          _showTechnicianNotesRequiredPopup();
+                          return;
+                        }
+                        if (_isCriticalWithoutService) {
+                          _showServicesNotAddedPopup();
+                          return;
+                        }
                         Navigator.pop(
                           context,
                           widget.item.copyWith(
@@ -300,6 +559,21 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                             severity: selectedSeverity,
                             notes: notesController.text,
                             photoPaths: photoNames,
+                            photoEvidenceBase64: photoEvidenceBase64,
+                            serviceCode: _needsServiceEstimate
+                                ? _selectedServiceCodes
+                                : null,
+                            estimatedCost: _needsServiceEstimate
+                                ? _selectedServicesTotal
+                                : null,
+                            materialCodes: _needsServiceEstimate
+                                ? _selectedMaterialCodes
+                                : const [],
+                            selectedServices: _needsServiceEstimate
+                                ? selectedServices
+                                    .map((service) => service.toSelected())
+                                    .toList(growable: false)
+                                : const [],
                           ),
                         );
                       },
@@ -314,10 +588,220 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     );
   }
 
+  bool get _needsServiceEstimate =>
+      selectedSeverity == 'high' || selectedSeverity == 'critical';
+
+  Widget _buildServiceEstimateCard() {
+    final visibleMatches = serviceMatches;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.home_repair_service,
+            color: Color(0xFF92400E),
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Related services',
+                  style: AppStyles.labelMd.copyWith(
+                    color: const Color(0xFF78350F),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: serviceSearchController,
+                  onTap: () {
+                    setState(() => _showServiceOptions = true);
+                    if (serviceMatches.length <= 1) {
+                      _loadRelatedServices(query: serviceSearchController.text);
+                    }
+                  },
+                  onChanged: (value) {
+                    setState(() {
+                      _showServiceOptions = true;
+                      if (selectedService != null &&
+                          value.trim() != selectedService!.name &&
+                          value.trim() != selectedService!.serviceCode) {
+                        selectedService = null;
+                      }
+                    });
+                    _loadRelatedServices(query: value);
+                  },
+                  decoration: AppStyles.buildInputDecoration(
+                    hint: 'Search service name or code',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: serviceSearchController.text.isEmpty
+                        ? const Icon(Icons.expand_more)
+                        : IconButton(
+                            tooltip: 'Clear service',
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              setState(() {
+                                selectedService = null;
+                                serviceSearchController.clear();
+                                _showServiceOptions = true;
+                              });
+                              _loadRelatedServices(query: '');
+                            },
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isLoadingServices
+                      ? 'Searching service catalog...'
+                      : selectedServices.isEmpty
+                          ? selectedSeverity == 'critical'
+                              ? 'Critical issue: service selection is compulsory.'
+                              : 'Select one or more services to attach to this issue.'
+                          : '${selectedServices.length} services selected - Rs ${_selectedServicesTotal.toStringAsFixed(0)}',
+                  style: AppStyles.bodySm.copyWith(
+                    color: const Color(0xFF92400E),
+                  ),
+                ),
+                if (selectedServices.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final service in selectedServices)
+                        Chip(
+                          label: Text(
+                            '${service.serviceCode} - Rs ${service.estimatedCost.toStringAsFixed(0)}',
+                          ),
+                          onDeleted: () => _toggleService(service),
+                        ),
+                    ],
+                  ),
+                ],
+                if (!_isLoadingServices &&
+                    _showServiceOptions &&
+                    visibleMatches.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: visibleMatches.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final match = visibleMatches[index];
+                        final isSelected = selectedServices.any(
+                          (service) => service.serviceCode == match.serviceCode,
+                        );
+                        return ListTile(
+                          dense: true,
+                          selected: isSelected,
+                          leading: Icon(
+                            isSelected
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            color: const Color(0xFF92400E),
+                          ),
+                          title: Text(
+                            '${match.name} (${match.serviceCode})',
+                            style: AppStyles.bodySm.copyWith(
+                              color: const Color(0xFF78350F),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: match.description == null
+                              ? null
+                              : Text(
+                                  match.description!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          trailing: Text(
+                            'Rs ${match.estimatedCost.toStringAsFixed(0)}',
+                            style: AppStyles.labelSm.copyWith(
+                              color: const Color(0xFF92400E),
+                            ),
+                          ),
+                          onTap: () {
+                            _toggleService(match);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                if (!_isLoadingServices &&
+                    _showServiceOptions &&
+                    visibleMatches.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Text(
+                      'No matching services found. Add Consultation for Rs 150.',
+                      style: AppStyles.bodySm.copyWith(
+                        color: const Color(0xFF92400E),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: KeprButton(
+                      label: 'Add Consultation - Rs 150',
+                      variant: ButtonVariant.secondary,
+                      icon: const Icon(Icons.support_agent),
+                      onPressed: _addConsultationService,
+                    ),
+                  ),
+                ],
+                if (_selectedMaterialCodes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Materials ${_selectedMaterialCodes.join(', ')}',
+                    style: AppStyles.bodySm.copyWith(
+                      color: const Color(0xFF92400E),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSeverityButton(String label, String value, Color color) {
     final isSelected = selectedSeverity == value;
     return GestureDetector(
-      onTap: () => setState(() => selectedSeverity = value),
+      onTap: () {
+        final wasEstimate = _needsServiceEstimate;
+        setState(() => selectedSeverity = value);
+        if (!wasEstimate && _needsServiceEstimate) {
+          _loadRelatedServices();
+        }
+      },
       child: Container(
         decoration: BoxDecoration(
           color: isSelected ? color : Colors.white,

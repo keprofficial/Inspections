@@ -7,6 +7,7 @@ import '../widgets/bottom_nav.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_logo.dart';
 import 'inspections_dashboard_screen.dart';
+import 'profile_screen.dart';
 
 class CreateAccountPropertyDetailsScreen extends StatefulWidget {
   const CreateAccountPropertyDetailsScreen({Key? key}) : super(key: key);
@@ -149,11 +150,11 @@ class _CreateAccountPropertyDetailsScreenState
       Navigator.pop(context);
       return;
     }
-    if (tab == BottomNavTab.inspections) {
+    if (tab == BottomNavTab.profile) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => const InspectionsDashboardScreen(),
+          builder: (context) => const ProfileScreen(),
         ),
       );
     }
@@ -173,15 +174,21 @@ class _CreateAccountPropertyDetailsScreenState
       if (saved != null) {
         InspectionSession.profileId = saved.profileId;
         InspectionSession.propertyId = saved.propertyId;
-        InspectionSession.inspectionId =
-            await SupabaseRepository.instance.startInspection(
+        final started = await SupabaseRepository.instance.startInspection(
           propertyId: saved.propertyId,
-          title: 'Annual Audit - ${_flatController.text.trim()}',
+          authToken: InspectionSession.authToken ?? '',
+          inspectionType: 'flat',
+          title: 'Annual Audit - ${saved.block ?? _flatController.text.trim()}',
         );
+        InspectionSession.inspectionId = started?.inspectionId;
+        InspectionSession.inspectionCode = started?.inspectionCode;
       }
-      InspectionSession.keprId = _keprIdController.text.trim();
-      InspectionSession.societyName = _societyController.text.trim();
-      InspectionSession.flatNumber = _flatController.text.trim();
+      InspectionSession.keprId =
+          saved?.propertyCode ?? _keprIdController.text.trim();
+      InspectionSession.societyName =
+          saved?.propertyName ?? _societyController.text.trim();
+      InspectionSession.flatNumber =
+          saved?.block ?? _flatController.text.trim();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

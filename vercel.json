@@ -1,9 +1,9 @@
 {
-  "buildCommand": "cd .. && flutter/bin/flutter.bat build web --release",
+  "buildCommand": "cd .. && flutter/bin/flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY",
   "outputDirectory": "build/web",
   "env": {
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_ANON_KEY": "@supabase_anon_key"
+    "SUPABASE_URL": "https://egalrsutygdvdmjkvduh.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_Odebo_AnNPzq9p2Dpy1lGg_3wKogYCh"
   },
   "rewrites": [
     {

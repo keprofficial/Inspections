@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_styles.dart';
 import '../constants/colors.dart';
 import '../models/models.dart';
+import '../services/inspection_draft_storage.dart';
 import '../services/inspection_session.dart';
 import '../services/supabase_repository.dart';
 import '../widgets/kepr_button.dart';
@@ -123,10 +124,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
                     child: KeprButton(
                       label: 'SAVE DRAFT',
                       variant: ButtonVariant.secondary,
-                      onPressed: () =>
-                          ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Draft saved!')),
-                      ),
+                      onPressed: _saveDraft,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -157,6 +155,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
           area: currentArea,
         );
       }
+      await InspectionDraftStorage.saveArea(currentArea);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Section submitted!')),
@@ -173,7 +172,16 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   }
 
   void _closeWithCurrentArea() {
+    InspectionDraftStorage.saveArea(_currentArea());
     Navigator.pop(context, _currentArea());
+  }
+
+  Future<void> _saveDraft() async {
+    await InspectionDraftStorage.saveArea(_currentArea());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Draft saved locally')),
+    );
   }
 
   InspectionArea _currentArea() {
@@ -252,6 +260,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
         setState(() {
           items[index] = updatedItem;
         });
+        await InspectionDraftStorage.saveArea(_currentArea());
       },
       child: Opacity(
         opacity: item.completed ? 0.6 : 1.0,
@@ -299,6 +308,15 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
                         color: _severityColor(severity),
                       ),
                     ),
+                    if ((item.serviceCode ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Service ${item.serviceCode} - Rs ${item.estimatedCost?.toStringAsFixed(0) ?? '0'}',
+                        style: AppStyles.bodySm.copyWith(
+                          color: AppColors.neutral500,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

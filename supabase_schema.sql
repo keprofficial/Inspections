@@ -38,6 +38,10 @@ create table if not exists public.properties (
 
 alter table public.properties alter column profile_id set not null;
 alter table public.properties add column if not exists updated_at timestamptz not null default now();
+alter table public.properties add column if not exists type text;
+alter table public.properties add column if not exists name text;
+alter table public.properties add column if not exists block text;
+alter table public.properties add column if not exists property_code text;
 do $$
 begin
   if not exists (
@@ -63,6 +67,13 @@ alter table public.inspections alter column property_id set not null;
 alter table public.inspections add column if not exists progress integer not null default 0;
 alter table public.inspections add column if not exists submitted_at timestamptz;
 alter table public.inspections add column if not exists updated_at timestamptz not null default now();
+alter table public.inspections add column if not exists inspector_name text;
+alter table public.inspections add column if not exists conducted_at timestamptz;
+alter table public.inspections add column if not exists overall_health_score integer;
+alter table public.inspections add column if not exists next_due_at timestamptz;
+alter table public.inspections add column if not exists full_report_pdf_url text;
+alter table public.inspections add column if not exists summary text;
+alter table public.inspections add column if not exists inspection_ref text;
 
 create table if not exists public.inspection_areas (
   id uuid primary key default gen_random_uuid(),
@@ -109,6 +120,9 @@ create table if not exists public.inspection_results (
 
 alter table public.inspection_results alter column inspection_area_id set not null;
 alter table public.inspection_results add column if not exists photo_names text[] not null default '{}';
+alter table public.inspection_results add column if not exists service_code text;
+alter table public.inspection_results add column if not exists estimated_cost numeric;
+alter table public.inspection_results add column if not exists material_codes text[] not null default '{}';
 alter table public.inspection_results add column if not exists updated_at timestamptz not null default now();
 do $$
 begin
@@ -119,6 +133,44 @@ begin
   end if;
 end;
 $$;
+
+create table if not exists public.inspection_issues (
+  id uuid primary key default gen_random_uuid(),
+  inspection_id uuid not null references public.inspections(id) on delete cascade,
+  severity text not null,
+  category text not null,
+  description text not null,
+  photo_urls text[],
+  status text default 'open',
+  linked_service_id uuid,
+  linked_booking_id uuid,
+  plan_covered boolean default false,
+  resident_approval_needed boolean default true,
+  resolved_by_user_id uuid,
+  resolved_at timestamptz,
+  service_code text,
+  estimated_cost numeric,
+  booking_id uuid,
+  is_custom boolean not null default false,
+  custom_title text,
+  issue_ref text not null,
+  material_codes text[] not null default '{}'
+);
+
+alter table public.inspection_issues add column if not exists photo_urls text[];
+alter table public.inspection_issues add column if not exists linked_service_id uuid;
+alter table public.inspection_issues add column if not exists linked_booking_id uuid;
+alter table public.inspection_issues add column if not exists plan_covered boolean default false;
+alter table public.inspection_issues add column if not exists resident_approval_needed boolean default true;
+alter table public.inspection_issues add column if not exists resolved_by_user_id uuid;
+alter table public.inspection_issues add column if not exists resolved_at timestamptz;
+alter table public.inspection_issues add column if not exists service_code text;
+alter table public.inspection_issues add column if not exists estimated_cost numeric;
+alter table public.inspection_issues add column if not exists booking_id uuid;
+alter table public.inspection_issues add column if not exists is_custom boolean not null default false;
+alter table public.inspection_issues add column if not exists custom_title text;
+alter table public.inspection_issues add column if not exists issue_ref text not null default gen_random_uuid()::text;
+alter table public.inspection_issues add column if not exists material_codes text[] not null default '{}';
 
 create table if not exists public.inspection_photos (
   id uuid primary key default gen_random_uuid(),
@@ -212,6 +264,7 @@ alter table public.properties enable row level security;
 alter table public.inspections enable row level security;
 alter table public.inspection_areas enable row level security;
 alter table public.inspection_results enable row level security;
+alter table public.inspection_issues enable row level security;
 alter table public.inspection_photos enable row level security;
 alter table public.inspection_reports enable row level security;
 
@@ -226,6 +279,8 @@ drop policy if exists "dev read inspection areas" on public.inspection_areas;
 drop policy if exists "dev insert inspection areas" on public.inspection_areas;
 drop policy if exists "dev read inspection results" on public.inspection_results;
 drop policy if exists "dev insert inspection results" on public.inspection_results;
+drop policy if exists "dev read inspection issues" on public.inspection_issues;
+drop policy if exists "dev insert inspection issues" on public.inspection_issues;
 drop policy if exists "dev insert inspection photos" on public.inspection_photos;
 drop policy if exists "dev read inspection reports" on public.inspection_reports;
 drop policy if exists "dev insert inspection reports" on public.inspection_reports;
@@ -329,6 +384,32 @@ with check (
     where ia.id = inspection_results.inspection_area_id and p.auth_user_id = auth.uid()
   )
 );
+
+drop policy if exists "inspection issues owner all" on public.inspection_issues;
+create policy "inspection issues owner all" on public.inspection_issues
+for all using (
+  exists (
+    select 1
+    from public.inspections i
+    join public.properties pr on pr.id = i.property_id
+    join public.profiles p on p.id = pr.profile_id
+    where i.id = inspection_issues.inspection_id and p.auth_user_id = auth.uid()
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.inspections i
+    join public.properties pr on pr.id = i.property_id
+    join public.profiles p on p.id = pr.profile_id
+    where i.id = inspection_issues.inspection_id and p.auth_user_id = auth.uid()
+  )
+);
+
+drop policy if exists "dev insert inspection issues" on public.inspection_issues;
+create policy "dev insert inspection issues" on public.inspection_issues
+for insert to anon
+with check (true);
 
 drop policy if exists "inspection photos owner read" on public.inspection_photos;
 create policy "inspection photos owner read" on public.inspection_photos

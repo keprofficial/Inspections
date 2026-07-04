@@ -2292,38 +2292,375 @@ const List<InspectionAreaTemplate> inspectionAreaTemplates = [
       ]),
 ];
 
-InspectionAreaTemplate templateByKey(String key) {
-  return inspectionAreaTemplates.firstWhere((template) => template.key == key,
-      orElse: () => inspectionAreaTemplates.first);
+List<InspectionArea> buildInspectionAreasFromTemplates(
+  List<InspectionAreaTemplate> templates,
+) {
+  return [
+    for (final template in templates)
+      InspectionArea(
+        id: 'area-${template.key}',
+        name: template.name,
+        icon: template.iconName,
+        templateKey: template.key,
+        progress: 0,
+        status: 'pending',
+        issues: inspectionItemsForTemplate(template).length,
+        completed: 0,
+        items: inspectionItemsForTemplate(template),
+      ),
+  ];
 }
 
-List<InspectionArea> buildDefaultInspectionAreas() {
-  final defaultKeys = [
-    'main-entrance-door',
-    'living-room',
-    'master-bedroom',
-    'bedroom-2',
-    'kitchen',
-    'balcony',
-    'electrical-panel-mcb-room',
-    'water-tank-overhead',
-    'loft-storage'
-  ];
+List<InspectionItem> inspectionItemsForTemplate(
+    InspectionAreaTemplate template) {
   return [
-    for (final key in defaultKeys)
-      (() {
-        final template = templateByKey(key);
-        return InspectionArea(
-          id: 'area-' + key,
-          name: template.name,
-          icon: template.iconName,
-          templateKey: template.key,
-          progress: 0,
-          status: 'pending',
-          issues: template.items.length,
-          completed: 0,
-          items: template.items,
-        );
-      })(),
+    ...template.items,
+    _wallDampnessCheckFor(template),
   ];
+}
+
+List<InspectionArea> ensureRequiredAreaChecks(List<InspectionArea> areas) {
+  return areas.map(_ensureRequiredAreaChecks).toList(growable: false);
+}
+
+InspectionArea _ensureRequiredAreaChecks(InspectionArea area) {
+  final hasDampnessCheck =
+      area.items.any((item) => item.id.endsWith('-wall-dampness-check'));
+  if (hasDampnessCheck) return area;
+
+  final dampnessCheck = _wallDampnessCheckForArea(
+    key: area.templateKey,
+    name: area.name,
+  );
+  final updatedItems = [...area.items, dampnessCheck];
+  return area.copyWith(
+    issues: updatedItems.length,
+    items: updatedItems,
+  );
+}
+
+InspectionItem _wallDampnessCheckFor(InspectionAreaTemplate template) {
+  return _wallDampnessCheckForArea(key: template.key, name: template.name);
+}
+
+InspectionItem _wallDampnessCheckForArea({
+  required String key,
+  required String name,
+}) {
+  return InspectionItem(
+    id: '$key-wall-dampness-check',
+    name:
+        'Check dampness on all walls and capture multiple wall photos for evidence',
+    category: 'Leakage/Seepage',
+    inspectionType: 'Wall Dampness Multi-Photo Check',
+    description:
+        'Inspect every accessible wall in $name for dampness, seepage, bubbling paint, staining, or moisture patches. Capture separate live photos for multiple walls before marking complete.',
+    howTo: 'Source: KEPR room-wise dampness control requirement',
+    equipmentNeeded: 'Device camera, moisture meter if available',
+    severity: 'high',
+    completed: false,
+  );
+}
+
+InspectionArea sampleReportChecksAreaArchive() {
+  const items = [
+    InspectionItem(
+      id: 'sample-report-1',
+      name:
+          'Check for leakage or seepage patches near windows and external walls',
+      category: 'Leakage/Seepage',
+      inspectionType: 'Moisture Visual Check',
+      description:
+          'Inspect walls around windows, exterior-facing corners, and sill joints for dampness, discoloration, or active leakage marks.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera, moisture meter if available',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-2',
+      name: 'Check ceiling areas above doors and windows for seepage marks',
+      category: 'Leakage/Seepage',
+      inspectionType: 'Ceiling Dampness Check',
+      description:
+          'Look for ceiling staining, bubbling, dark patches, or water trail marks above openings and beam junctions.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera, ladder if required',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-3',
+      name: 'Verify AC voltage is within the expected 230V to 240V range',
+      category: 'Electrical Work',
+      inspectionType: 'Voltage Check',
+      description:
+          'Measure supply voltage at accessible points and record any over-voltage or under-voltage condition.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Multimeter or clamp meter',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-4',
+      name: 'Check for current leakage at junction boxes and switchboards',
+      category: 'Electrical Work',
+      inspectionType: 'Current Leakage Check',
+      description:
+          'Use a tester or meter to confirm no unsafe current leakage is present at exposed junctions, conduits, or switchboards.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Non-contact tester, multimeter',
+      severity: 'critical',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-5',
+      name:
+          'Verify earthing is available at all switchboards and major sockets',
+      category: 'Electrical Work',
+      inspectionType: 'Earthing Check',
+      description:
+          'Confirm earth continuity at switchboards, appliance points, geyser sockets, and AC points.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Socket tester, multimeter',
+      severity: 'critical',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-6',
+      name: 'Test MCB and ELCB tripping and verify circuit labeling',
+      category: 'Electrical Work',
+      inspectionType: 'Protection Device Check',
+      description:
+          'Check MCB/ELCB operation, room-wise marking, and whether labeling matches the actual connected load.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'MCB/ELCB tester or manual test button',
+      severity: 'critical',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-7',
+      name:
+          'Operate all switches and buttons to identify hard or loose operation',
+      category: 'Electrical Work',
+      inspectionType: 'Switch Operation Check',
+      description:
+          'Press each accessible switch and note stiffness, loose plates, sparking, or damaged modules.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Manual check',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-8',
+      name:
+          'Inspect plumbing fixtures for leakage at corners, joints, and traps',
+      category: 'Plumbing & Fixtures',
+      inspectionType: 'Leakage Check',
+      description:
+          'Check under-sink areas, bottle traps, shower points, flush tanks, angle valves, and exposed pipe joints for leakage.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera, tissue/wipe, flashlight',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-9',
+      name:
+          'Check doors for alignment, lock operation, stopper, and frame gaps',
+      category: 'Doors',
+      inspectionType: 'Door Function Check',
+      description:
+          'Open, close, latch, and lock each door. Record rubbing, misalignment, missing stopper, damaged hardware, or frame gaps.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Manual check',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-10',
+      name:
+          'Check windows for alignment, damaged glass, gaps, and hard operation',
+      category: 'Windows',
+      inspectionType: 'Window Function Check',
+      description:
+          'Operate all window panels and inspect glass, tracks, locks, sealant, outer frame gaps, and rainwater entry points.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Manual check, device camera',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-11',
+      name:
+          'Inspect walls and ceiling for cracks, uneven finish, dampness, and hollowness',
+      category: 'Walls & Ceiling',
+      inspectionType: 'Surface Condition Check',
+      description:
+          'Check visible wall and ceiling surfaces for hairline cracks, bulges, damp patches, poor plaster finish, and hollow sound.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera, tapping tool if available',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-12',
+      name:
+          'Check flooring tiles for cracks, hollow sound, lippage, and slope issues',
+      category: 'Flooring',
+      inspectionType: 'Floor Finish Check',
+      description:
+          'Inspect tile joints, cracked tiles, uneven levels, hollow tiles, slope toward drains, and skirting finish.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Tapping tool, spirit level if available',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-13',
+      name:
+          'Inspect painting finish near corners, windows, doors, and repaired patches',
+      category: 'Painting',
+      inspectionType: 'Paint Finish Check',
+      description:
+          'Look for roller marks, patchiness, peeling, staining, overspray, cracks near openings, and poor edge finishing.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera',
+      severity: 'low',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-14',
+      name:
+          'Check dado tiles for cracks, hollow sound, grout gaps, and alignment',
+      category: 'Dado',
+      inspectionType: 'Wall Tile Check',
+      description:
+          'Inspect kitchen and bathroom wall tiles for cracks, hollow sound, missing grout, chipped edges, and uneven alignment.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Tapping tool, device camera',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-15',
+      name:
+          'Inspect woodwork shutters, drawers, hinges, laminate edges, and handles',
+      category: 'Woodwork',
+      inspectionType: 'Carpentry Finish Check',
+      description:
+          'Operate cabinets and wardrobes. Check alignment, hinge noise, handle fixing, laminate peeling, edge banding, and scratches.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Manual check',
+      severity: 'low',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'sample-report-16',
+      name:
+          'Check granite and marble frames for cracks, chips, gaps, and polish finish',
+      category: 'Granite/Marble Frame',
+      inspectionType: 'Stone Finish Check',
+      description:
+          'Inspect stone frames, sills, thresholds, and counters for cracks, chips, joint gaps, stains, and uneven polish.',
+      howTo: 'Source: PropCheckup-style sample report category',
+      equipmentNeeded: 'Device camera, manual check',
+      severity: 'medium',
+      completed: false,
+    ),
+  ];
+
+  return InspectionArea(
+    id: 'area-sample-report-checks',
+    name: 'Sample Report Checks',
+    icon: 'fact_check',
+    templateKey: 'sample-report-checks',
+    progress: 0,
+    status: 'pending',
+    issues: items.length,
+    completed: 0,
+    items: items,
+  );
+}
+
+InspectionArea latestSafetyChecksAreaArchive() {
+  const items = [
+    InspectionItem(
+      id: 'latest-safety-1',
+      name:
+          'Verify all captured issue photos are live camera evidence with visible context',
+      category: 'Evidence Quality',
+      inspectionType: 'Fraud Prevention Check',
+      description:
+          'Confirm evidence photos clearly show the actual issue, room context, and no gallery/imported images were used.',
+      howTo: 'Source: Latest KEPR inspection control requirement',
+      equipmentNeeded: 'Device camera',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'latest-safety-2',
+      name:
+          'Confirm next inspection due date is after the conducted inspection date',
+      category: 'Inspection Governance',
+      inspectionType: 'Schedule Validation',
+      description:
+          'Validate that the next inspection date/time is later than the current conducted inspection timestamp.',
+      howTo: 'Source: Latest KEPR inspection control requirement',
+      equipmentNeeded: 'Inspection app',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'latest-safety-3',
+      name:
+          'Check that every resident-facing URL opens and belongs to Supabase storage',
+      category: 'Resident App Readiness',
+      inspectionType: 'URL Validation',
+      description:
+          'Verify uploaded photo/report links are valid public URLs before submission.',
+      howTo: 'Source: Latest KEPR inspection control requirement',
+      equipmentNeeded: 'Inspection app',
+      severity: 'high',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'latest-safety-4',
+      name:
+          'Review custom quote items and confirm no matching catalog service exists',
+      category: 'Service Quality',
+      inspectionType: 'Custom Quote Validation',
+      description:
+          'Use Custom Quote only when the live service catalog does not contain a suitable service.',
+      howTo: 'Source: Latest KEPR inspection control requirement',
+      equipmentNeeded: 'Service catalog search',
+      severity: 'medium',
+      completed: false,
+    ),
+    InspectionItem(
+      id: 'latest-safety-5',
+      name:
+          'Confirm annotated images highlight the exact defect location for critical issues',
+      category: 'Evidence Quality',
+      inspectionType: 'Image Annotation Review',
+      description:
+          'Critical issue images should include tap/draw annotation where it helps identify the issue quickly.',
+      howTo: 'Source: Latest KEPR inspection control requirement',
+      equipmentNeeded: 'Device camera, annotation tool',
+      severity: 'high',
+      completed: false,
+    ),
+  ];
+
+  return InspectionArea(
+    id: 'area-latest-safety-checks',
+    name: 'Latest Safety Checks',
+    icon: 'verified',
+    templateKey: 'latest-safety-checks',
+    progress: 0,
+    status: 'pending',
+    issues: items.length,
+    completed: 0,
+    items: items,
+  );
 }

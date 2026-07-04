@@ -61,7 +61,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
         throw CameraException('no_camera', 'No camera found on this device.');
       }
 
-      _cameraIndex = cameraIndex.clamp(0, _cameras.length - 1) as int;
+      _cameraIndex = cameraIndex.clamp(0, _cameras.length - 1);
       final oldController = _controller;
       final controller = CameraController(
         _cameras[_cameraIndex],

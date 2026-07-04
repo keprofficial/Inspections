@@ -6,6 +6,7 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
   final String? subtitle;
   final bool showMenu;
+  final VoidCallback? onLogoTap;
   final VoidCallback? onMenuTap;
   final VoidCallback? onNotificationTap;
 
@@ -14,6 +15,7 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
     this.title,
     this.subtitle,
     this.showMenu = true,
+    this.onLogoTap,
     this.onMenuTap,
     this.onNotificationTap,
   }) : super(key: key);
@@ -29,7 +31,11 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: false,
       title: Row(
         children: [
-          const KeprLogo(size: 38),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onLogoTap,
+            child: const KeprLogo(size: 38),
+          ),
           if (title != null) ...[
             const SizedBox(width: 12),
             Column(
@@ -65,7 +71,7 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
                 onPressed: onNotificationTap,
               ),
               IconButton(
-                icon: const Icon(Icons.menu),
+                icon: const Icon(Icons.tune),
                 onPressed: onMenuTap,
               ),
             ]

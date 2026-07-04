@@ -211,14 +211,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
   void _handleBottomNav(BottomNavTab tab) {
     if (tab == BottomNavTab.home) return;
-    if (tab == BottomNavTab.inspections) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const InspectionsDashboardScreen(),
-        ),
-      );
-    }
     if (tab == BottomNavTab.profile) {
       Navigator.push(
         context,
@@ -294,15 +286,21 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       if (saved != null) {
         InspectionSession.profileId = saved.profileId;
         InspectionSession.propertyId = saved.propertyId;
-        InspectionSession.inspectionId =
-            await SupabaseRepository.instance.startInspection(
+        final started = await SupabaseRepository.instance.startInspection(
           propertyId: saved.propertyId,
-          title: 'Annual Audit - ${_flatController.text.trim()}',
+          authToken: InspectionSession.authToken ?? '',
+          inspectionType: 'flat',
+          title: 'Annual Audit - ${saved.block ?? _flatController.text.trim()}',
         );
+        InspectionSession.inspectionId = started?.inspectionId;
+        InspectionSession.inspectionCode = started?.inspectionCode;
       }
-      InspectionSession.keprId = _keprIdController.text.trim();
-      InspectionSession.societyName = _societyController.text.trim();
-      InspectionSession.flatNumber = _flatController.text.trim();
+      InspectionSession.keprId =
+          saved?.propertyCode ?? _keprIdController.text.trim();
+      InspectionSession.societyName =
+          saved?.propertyName ?? _societyController.text.trim();
+      InspectionSession.flatNumber =
+          saved?.block ?? _flatController.text.trim();
       if (!mounted) return;
       Navigator.push(
         context,
