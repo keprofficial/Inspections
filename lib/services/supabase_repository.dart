@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../data/inspection_checklist_data.dart';
 import '../models/models.dart';
 import 'inspection_draft_storage.dart';
+import 'inspection_session.dart';
 
 class SavedProperty {
   final String profileId;
@@ -71,17 +73,6 @@ class ServiceMatch {
     this.materialCodes = const [],
     this.isCustomQuote = false,
   });
-
-  factory ServiceMatch.consultation(String issueName) {
-    return ServiceMatch(
-      serviceCode: 'CONSULT',
-      name: 'Consultation',
-      description:
-          'Inspection consultation for: ${issueName.trim().isEmpty ? 'inspection issue' : issueName.trim()}',
-      estimatedCost: 150,
-      isCustomQuote: true,
-    );
-  }
 
   factory ServiceMatch.fromSelected(InspectionSelectedService value) {
     return ServiceMatch(
@@ -255,6 +246,7 @@ class SupabaseRepository {
   Future<List<InspectionAreaTemplate>> fetchChecklistTemplates({
     bool defaultsOnly = false,
     String inspectionKind = 'flat',
+    String inspectionPlan = 'paid',
   }) async {
     final client = _client;
     if (client == null) return const [];
@@ -281,14 +273,39 @@ class SupabaseRepository {
           .toList(growable: false);
       if (keys.isEmpty) return const [];
 
-      final itemRows = await client
+      final freePlanItemIds = <String>{};
+      final freePlanSortOrder = <String, int>{};
+      if (inspectionPlan == 'free') {
+        final planRows = await client
+            .from('inspection_checklist_plan_items')
+            .select('item_id,sort_order')
+            .eq('inspection_kind', inspectionKind)
+            .eq('plan_key', 'free')
+            .eq('is_active', true)
+            .order('sort_order');
+        for (final row
+            in (planRows as List<dynamic>).whereType<Map<String, dynamic>>()) {
+          final itemId = row['item_id']?.toString() ?? '';
+          if (itemId.isNotEmpty) {
+            freePlanItemIds.add(itemId);
+            freePlanSortOrder[itemId] =
+                int.tryParse(row['sort_order']?.toString() ?? '') ?? 0;
+          }
+        }
+        if (freePlanItemIds.isEmpty) return const [];
+      }
+
+      var itemQuery = client
           .from('inspection_checklist_items')
           .select(
             'id,template_key,sort_order,name,category,inspection_type,description,how_to,equipment_needed,severity',
           )
           .eq('is_active', true)
-          .inFilter('template_key', keys)
-          .order('sort_order');
+          .inFilter('template_key', keys);
+      if (freePlanItemIds.isNotEmpty) {
+        itemQuery = itemQuery.inFilter('id', freePlanItemIds.toList());
+      }
+      final itemRows = await itemQuery.order('sort_order');
 
       final itemsByTemplate = <String, List<InspectionItem>>{};
       for (final row
@@ -308,6 +325,14 @@ class SupabaseRepository {
                 completed: false,
               ),
             );
+      }
+      if (freePlanSortOrder.isNotEmpty) {
+        for (final items in itemsByTemplate.values) {
+          items.sort(
+            (a, b) => (freePlanSortOrder[a.id] ?? 0)
+                .compareTo(freePlanSortOrder[b.id] ?? 0),
+          );
+        }
       }
 
       return [
@@ -643,6 +668,7 @@ class SupabaseRepository {
   }) async {
     final client = _client;
     if (client == null) return fileName;
+    final uploadBytes = _compressImageForUpload(Uint8List.fromList(bytes));
     final safeAreaName = _safePathPart(areaName ?? 'inspection-area');
     final safeFileName =
         '${DateTime.now().microsecondsSinceEpoch}_${_safePathPart(fileName)}';
@@ -662,7 +688,7 @@ class SupabaseRepository {
     try {
       await client.storage.from(inspectionPhotoBucket).uploadBinary(
             storagePath,
-            Uint8List.fromList(bytes),
+            uploadBytes,
             fileOptions: const FileOptions(
               contentType: 'image/jpeg',
               upsert: false,
@@ -673,7 +699,7 @@ class SupabaseRepository {
         uploadedPath = fallbackStoragePath;
         await _uploadWithRest(
           path: fallbackStoragePath,
-          bytes: bytes,
+          bytes: uploadBytes,
           contentType: 'image/jpeg',
         );
       } catch (retryError) {
@@ -699,7 +725,7 @@ class SupabaseRepository {
         'item_key': itemId,
         'file_name': safeFileName,
         'mime_type': 'image/jpeg',
-        'byte_size': bytes.length,
+        'byte_size': uploadBytes.length,
         'photo_url': photoUrl,
       });
     } catch (_) {
@@ -708,6 +734,31 @@ class SupabaseRepository {
     }
 
     return photoUrl;
+  }
+
+  Uint8List _compressImageForUpload(Uint8List bytes) {
+    if (bytes.length <= 50 * 1024) return bytes;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+
+    var width = decoded.width > 960 ? 960 : decoded.width;
+    var quality = 60;
+    Uint8List encoded = bytes;
+
+    while (true) {
+      final resized = decoded.width > width
+          ? img.copyResize(decoded, width: width)
+          : decoded;
+      encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+      if (encoded.length <= 50 * 1024) return encoded;
+      if (quality > 32) {
+        quality -= 7;
+      } else if (width > 480) {
+        width = (width * 0.82).round().clamp(420, width).toInt();
+      } else {
+        return encoded;
+      }
+    }
   }
 
   Future<String> uploadInspectionReportPdf({
@@ -803,8 +854,7 @@ class SupabaseRepository {
       0,
       (sum, area) => sum + area.items.where((item) => item.completed).length,
     );
-    final progress =
-        totalItems == 0 ? 0 : ((completedItems / totalItems) * 100).round();
+    final healthScore = _calculateHealthScore(areas);
 
     try {
       final criticalItems = <MapEntry<InspectionArea, InspectionItem>>[];
@@ -861,9 +911,9 @@ class SupabaseRepository {
           'p_payload': {
             'inspection_id': inspectionId,
             'session_token': authToken,
-            'overall_health_score': progress,
+            'overall_health_score': healthScore,
             'summary':
-                '$completedItems of $totalItems checks complete. ${issueRows.length} critical issues uploaded.',
+                '$completedItems of $totalItems checks complete. Health score $healthScore. ${issueRows.length} critical issues uploaded.',
             'report_pdf_url': reportPdfUrl,
             'issues': issueRows,
           },
@@ -874,6 +924,7 @@ class SupabaseRepository {
         inspectionId: response?.toString() ?? inspectionId,
         criticalIssueRows: issueRows.length,
         criticalItems: criticalItems.length,
+        healthScore: healthScore,
         reportPdfUrl: reportPdfUrl,
       );
     } catch (error) {
@@ -890,6 +941,87 @@ class SupabaseRepository {
         'Could not submit inspection report. Run supabase_inspection_rpc.sql '
         'in Supabase SQL Editor first. $error',
       );
+    }
+  }
+
+  int _calculateHealthScore(List<InspectionArea> areas) {
+    var score = 100.0;
+    for (final area in areas) {
+      for (final item in area.items) {
+        if (!item.completed) continue;
+        switch ((item.severity ?? '').toLowerCase()) {
+          case 'critical':
+            score -= 2.5;
+            break;
+          case 'high':
+            score -= 1.5;
+            break;
+          case 'medium':
+            score -= 0.5;
+            break;
+          case 'low':
+            score -= 0.2;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    return score.clamp(0, 100).round();
+  }
+
+  Future<void> saveInspectionDraft({
+    required List<InspectionArea> areas,
+  }) async {
+    final client = _client;
+    final inspectionId = InspectionSession.inspectionId;
+    if (client == null || inspectionId == null) return;
+
+    try {
+      await client.rpc(
+        'inspection_app_save_draft',
+        params: {
+          'p_payload': {
+            'inspection_id': inspectionId,
+            'session_token': InspectionSession.authToken,
+            'inspector_id': InspectionSession.inspectorId,
+            'areas': areas.map((area) => area.toJson()).toList(),
+          },
+        },
+      );
+    } catch (_) {
+      // Backend draft persistence is optional until the draft RPC SQL is run.
+      // Local cache remains the immediate recovery path.
+    }
+  }
+
+  Future<List<InspectionArea>?> loadInspectionDraft() async {
+    final client = _client;
+    final inspectionId = InspectionSession.inspectionId;
+    if (client == null || inspectionId == null) return null;
+
+    try {
+      final response = await client.rpc(
+        'inspection_app_load_draft',
+        params: {
+          'p_payload': {
+            'inspection_id': inspectionId,
+            'session_token': InspectionSession.authToken,
+            'inspector_id': InspectionSession.inspectorId,
+          },
+        },
+      );
+      if (response is! Map) return null;
+      final areas = response['areas'];
+      if (areas is! List) return null;
+      return areas
+          .whereType<Map>()
+          .map((row) => InspectionArea.fromJson(
+                row.map((key, value) => MapEntry(key.toString(), value)),
+              ))
+          .toList(growable: false);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -997,16 +1129,21 @@ class SupabaseRepository {
           )
           .not('full_report_pdf_url', 'is', null);
       final name = inspectorName?.trim();
-      if (name != null && name.isNotEmpty) {
-        query = query.eq('inspector_name', name);
-      }
       final rows = await query
           .order('submitted_at', ascending: false, nullsFirst: false)
-          .limit(limit);
+          .limit(limit * 4);
       for (final row in (rows as List<dynamic>).whereType<Map>()) {
         final data = row.map((key, value) => MapEntry(key.toString(), value));
         final url = data['full_report_pdf_url']?.toString() ?? '';
         if (url.isEmpty) continue;
+        final rowInspectorName = data['inspector_name']?.toString().trim();
+        if (name != null &&
+            name.isNotEmpty &&
+            rowInspectorName != null &&
+            rowInspectorName.isNotEmpty &&
+            !_sameInspectorName(rowInspectorName, name)) {
+          continue;
+        }
         final property = data['properties'];
         final propertyMap = property is Map
             ? property.map((key, value) => MapEntry(key.toString(), value))
@@ -1083,6 +1220,12 @@ class SupabaseRepository {
   DateTime? _dateFromDb(Object? value) {
     if (value == null) return null;
     return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  bool _sameInspectorName(String left, String right) {
+    String normalize(String value) =>
+        value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    return normalize(left) == normalize(right);
   }
 
   Future<SavedProperty?> _findLivePropertyByCode(
@@ -1273,7 +1416,7 @@ class SupabaseRepository {
           .take(limit)
           .toList();
 
-      if (matches.isNotEmpty) return matches;
+      if (matches.isNotEmpty) return _attachDefaultMaterials(matches);
     } catch (_) {}
 
     return const [];
@@ -1339,6 +1482,66 @@ class SupabaseRepository {
     );
   }
 
+  Future<List<ServiceMatch>> _attachDefaultMaterials(
+    List<ServiceMatch> services,
+  ) async {
+    final client = _client;
+    if (client == null || services.isEmpty) return services;
+
+    final serviceIds = services
+        .map((service) => service.id)
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (serviceIds.isEmpty) return services;
+
+    try {
+      final rows = await client
+          .from('service_material_defaults')
+          .select(
+              'service_id,quantity,materials_catalog(material_code,unit_price)')
+          .inFilter('service_id', serviceIds)
+          .eq('is_included', true)
+          .order('sort_order');
+
+      final codesByService = <String, List<String>>{};
+      final materialCostByService = <String, double>{};
+      for (final row
+          in (rows as List<dynamic>).whereType<Map<String, dynamic>>()) {
+        final serviceId = row['service_id']?.toString();
+        if (serviceId == null || serviceId.isEmpty) continue;
+        final material = row['materials_catalog'];
+        if (material is! Map) continue;
+        final materialCode = material['material_code']?.toString();
+        if (materialCode == null || materialCode.isEmpty) continue;
+        final quantity = _numberAsDouble(row['quantity']) ?? 1;
+        final unitPrice = _numberAsDouble(material['unit_price']) ?? 0;
+        codesByService.putIfAbsent(serviceId, () => []).add(materialCode);
+        materialCostByService[serviceId] =
+            (materialCostByService[serviceId] ?? 0) + (unitPrice * quantity);
+      }
+
+      return services.map((service) {
+        final serviceId = service.id;
+        if (serviceId == null || !codesByService.containsKey(serviceId)) {
+          return service;
+        }
+        return ServiceMatch(
+          id: service.id,
+          serviceCode: service.serviceCode,
+          name: service.name,
+          description: service.description,
+          estimatedCost:
+              service.estimatedCost + (materialCostByService[serviceId] ?? 0),
+          materialCodes: codesByService[serviceId] ?? const [],
+          isCustomQuote: service.isCustomQuote,
+        );
+      }).toList(growable: false);
+    } catch (_) {
+      return services;
+    }
+  }
+
   double? _numberAsDouble(Object? value) {
     if (value == null) return null;
     if (value is num) return value.toDouble();
@@ -1361,12 +1564,14 @@ class SubmitReportResult {
   final String inspectionId;
   final int criticalIssueRows;
   final int criticalItems;
+  final int healthScore;
   final String? reportPdfUrl;
 
   const SubmitReportResult({
     required this.inspectionId,
     required this.criticalIssueRows,
     required this.criticalItems,
+    required this.healthScore,
     this.reportPdfUrl,
   });
 }

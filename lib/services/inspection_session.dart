@@ -13,6 +13,7 @@ class InspectionSession {
   static String? _mobileNumber;
   static String? _authToken;
   static String? _inspectionMode;
+  static String? _inspectionPlan;
   static String? _propertyOwnerName;
   static String? _propertyOwnerMobile;
   static DateTime? _lastLoginAt;
@@ -29,6 +30,7 @@ class InspectionSession {
   static String? get mobileNumber => _mobileNumber;
   static String? get authToken => _authToken;
   static String? get inspectionMode => _inspectionMode;
+  static String? get inspectionPlan => _inspectionPlan;
   static String? get propertyOwnerName => _propertyOwnerName;
   static String? get propertyOwnerMobile => _propertyOwnerMobile;
   static DateTime? get lastLoginAt => _lastLoginAt;
@@ -51,12 +53,14 @@ class InspectionSession {
   static set mobileNumber(String? value) => _mobileNumber = value;
   static set authToken(String? value) => _authToken = value;
   static set inspectionMode(String? value) => _inspectionMode = value;
+  static set inspectionPlan(String? value) => _inspectionPlan = value;
   static set propertyOwnerName(String? value) => _propertyOwnerName = value;
   static set propertyOwnerMobile(String? value) => _propertyOwnerMobile = value;
   static set lastLoginAt(DateTime? value) => _lastLoginAt = value;
 
   static bool get isIndividualInspection => _inspectionMode == 'individual';
   static bool get isSocietyInspection => _inspectionMode == 'society';
+  static bool get isFreeInspection => _inspectionPlan == 'free';
 
   static void clear() {
     _profileId = null;
@@ -71,6 +75,7 @@ class InspectionSession {
     _mobileNumber = null;
     _authToken = null;
     _inspectionMode = null;
+    _inspectionPlan = null;
     _propertyOwnerName = null;
     _propertyOwnerMobile = null;
     _lastLoginAt = null;
@@ -85,6 +90,7 @@ class InspectionSession {
     _societyName = null;
     _flatNumber = null;
     _inspectionMode = null;
+    _inspectionPlan = null;
     _propertyOwnerName = null;
     _propertyOwnerMobile = null;
   }

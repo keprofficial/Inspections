@@ -128,7 +128,15 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     return selectedServices.map((service) => service.serviceCode).join(', ');
   }
 
-  bool get _canMarkCompleted => !_isWallDampnessCheck || photoNames.length >= 2;
+  bool get _requiresPhotoEvidence =>
+      selectedSeverity == 'high' || selectedSeverity == 'critical';
+
+  bool get _hasMissingRequiredPhotos {
+    if (_isWallDampnessCheck) return photoNames.length < 2;
+    return _requiresPhotoEvidence && photoNames.isEmpty;
+  }
+
+  bool get _canMarkCompleted => !_hasMissingRequiredPhotos;
 
   bool get _isCriticalWithoutService =>
       selectedSeverity == 'critical' && selectedServices.isEmpty;
@@ -160,18 +168,50 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     });
   }
 
-  void _addConsultationService() {
-    final consultation = ServiceMatch.consultation(widget.item.name);
-    setState(() {
-      selectedServices = [
-        ...selectedServices.where(
-            (service) => service.serviceCode != consultation.serviceCode),
-        consultation,
-      ];
-      selectedService = consultation;
-      serviceSearchController.text = consultation.name;
-      _showServiceOptions = false;
-    });
+  Future<void> _addConsultationService() async {
+    setState(() => _isLoadingServices = true);
+    try {
+      final matches = await SupabaseRepository.instance.searchServices(
+        query: 'consultation general',
+        limit: 30,
+      );
+      ServiceMatch? consultation;
+      for (final service in matches) {
+        final text =
+            '${service.name} ${service.serviceCode} ${service.description ?? ''}'
+                .toLowerCase();
+        if (text.contains('consult') || text.contains('general')) {
+          consultation = service;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (consultation == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Consultation service is missing in DB. Add it under General services first.',
+            ),
+          ),
+        );
+        return;
+      }
+      final selectedConsultation = consultation;
+      setState(() {
+        selectedServices = [
+          ...selectedServices.where(
+            (service) =>
+                service.serviceCode != selectedConsultation.serviceCode,
+          ),
+          selectedConsultation,
+        ];
+        selectedService = selectedConsultation;
+        serviceSearchController.text = selectedConsultation.name;
+        _showServiceOptions = false;
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingServices = false);
+    }
   }
 
   void _showServicesNotAddedPopup() {
@@ -180,7 +220,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Services not added'),
         content: const Text(
-          'Critical issues must have at least one service selected. Select a catalog service or add Consultation for Rs 150.',
+          'Critical issues must have at least one service selected. Select a catalog service or add Consultation from the General service catalog.',
         ),
         actions: [
           TextButton(
@@ -188,9 +228,9 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
             child: const Text('Close'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              _addConsultationService();
+              await _addConsultationService();
             },
             child: const Text('Add Consultation'),
           ),
@@ -207,6 +247,25 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
         content: const Text(
           'High and critical issues must include technician notes before marking complete.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPhotoRequiredPopup() {
+    final message = _isWallDampnessCheck
+        ? 'Capture at least 2 live wall photos before marking this check complete.'
+        : 'High and critical issues must include at least one live photo before marking complete.';
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Photo required'),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -299,10 +358,28 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return bytes;
 
-    final resized =
-        decoded.width > 1280 ? img.copyResize(decoded, width: 1280) : decoded;
+    var width = decoded.width > 960 ? 960 : decoded.width;
+    var quality = 62;
+    Uint8List encoded = Uint8List.fromList(
+      img.encodeJpg(
+        decoded.width > width ? img.copyResize(decoded, width: width) : decoded,
+        quality: quality,
+      ),
+    );
 
-    return Uint8List.fromList(img.encodeJpg(resized, quality: 68));
+    while (encoded.length > 50 * 1024 && (quality > 34 || width > 560)) {
+      if (quality > 34) {
+        quality -= 8;
+      } else {
+        width = (width * 0.82).round().clamp(420, width).toInt();
+      }
+      final resized = decoded.width > width
+          ? img.copyResize(decoded, width: width)
+          : decoded;
+      encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+    }
+
+    return encoded;
   }
 
   String _photoLabel(String value) {
@@ -369,10 +446,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                           ],
                         ),
                       ),
-                      AppBadge(
-                        label: widget.item.id.toUpperCase(),
-                        variant: BadgeVariant.error,
-                      ),
+                      const SizedBox.shrink(),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -460,6 +534,15 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                       style: AppStyles.bodySm.copyWith(color: AppColors.error),
                     ),
                   ],
+                  if (!_isWallDampnessCheck &&
+                      _requiresPhotoEvidence &&
+                      photoNames.isEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'At least 1 live photo is required for high and critical issues.',
+                      style: AppStyles.bodySm.copyWith(color: AppColors.error),
+                    ),
+                  ],
                   if (_needsServiceEstimate) ...[
                     const SizedBox(height: 16),
                     _buildServiceEstimateCard(),
@@ -544,6 +627,10 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                       icon: const Icon(Icons.check, color: Colors.white),
                       enabled: _canMarkCompleted,
                       onPressed: () {
+                        if (_hasMissingRequiredPhotos) {
+                          _showPhotoRequiredPopup();
+                          return;
+                        }
                         if (_isMissingRequiredNotes) {
                           _showTechnicianNotesRequiredPopup();
                           return;
@@ -758,7 +845,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                       border: Border.all(color: const Color(0xFFFDE68A)),
                     ),
                     child: Text(
-                      'No matching services found. Add Consultation for Rs 150.',
+                      'No matching services found. Add Consultation from the General service catalog.',
                       style: AppStyles.bodySm.copyWith(
                         color: const Color(0xFF92400E),
                       ),
@@ -768,7 +855,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: KeprButton(
-                      label: 'Add Consultation - Rs 150',
+                      label: 'Add Consultation',
                       variant: ButtonVariant.secondary,
                       icon: const Icon(Icons.support_agent),
                       onPressed: _addConsultationService,

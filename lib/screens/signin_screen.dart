@@ -7,6 +7,7 @@ import '../services/supabase_repository.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_logo.dart';
 import 'inspections_dashboard_screen.dart';
+import 'profile_screen.dart';
 import 'property_details_screen.dart';
 
 enum _InspectionMode { flat, society, individual }
@@ -44,6 +45,7 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _showBlockOptions = false;
   bool _showFlatOptions = false;
   _InspectionMode _inspectionMode = _InspectionMode.flat;
+  String _inspectionPlan = 'free';
   int _societyLoadToken = 0;
   int _blockLoadToken = 0;
   int _flatLoadToken = 0;
@@ -66,6 +68,8 @@ class _SignInScreenState extends State<SignInScreen> {
         phone: InspectionSession.mobileNumber,
         authToken: InspectionSession.authToken,
       );
+      _inspectionPlan =
+          InspectionSession.inspectionPlan == 'paid' ? 'paid' : 'free';
     } else if ((InspectionSession.authToken ?? '').isNotEmpty) {
       InspectionSession.clearInspectorAuth();
       InspectionDraftStorage.saveSession();
@@ -104,6 +108,22 @@ class _SignInScreenState extends State<SignInScreen> {
   bool get _canAuthenticate =>
       _mobileController.text.trim().length >= 8 &&
       _passwordController.text.isNotEmpty;
+
+  bool get _supportsFreePaidPlan =>
+      _inspectionMode == _InspectionMode.flat ||
+      _inspectionMode == _InspectionMode.society;
+
+  void _openProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(
+          onTabChange: (_) => Navigator.pop(context),
+          showCurrentInspection: false,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +226,20 @@ class _SignInScreenState extends State<SignInScreen> {
                                     ),
                                   ),
                                 ),
+                                TextButton(
+                                  onPressed: _openProfile,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: AppColors.coral,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 6,
+                                    ),
+                                    textStyle: AppStyles.labelSm.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  child: const Text('Go to profile'),
+                                ),
                               ],
                             ),
                           ),
@@ -213,6 +247,10 @@ class _SignInScreenState extends State<SignInScreen> {
                         if (_authenticatedInspector != null) ...[
                           const SizedBox(height: 18),
                           _buildInspectionModeSelector(),
+                          if (_supportsFreePaidPlan) ...[
+                            const SizedBox(height: 18),
+                            _buildInspectionPlanSelector(),
+                          ],
                           const SizedBox(height: 18),
                           if (_inspectionMode == _InspectionMode.flat)
                             ..._buildFlatInspectionFields()
@@ -332,7 +370,11 @@ class _SignInScreenState extends State<SignInScreen> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => setState(() => _inspectionMode = mode),
+        onTap: () => setState(() {
+          _inspectionMode = mode;
+          _inspectionPlan =
+              mode == _InspectionMode.individual ? 'paid' : _inspectionPlan;
+        }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
@@ -447,6 +489,102 @@ class _SignInScreenState extends State<SignInScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInspectionPlanSelector() {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildPlanCard(
+              plan: 'free',
+              title: 'Free',
+              subtitle: '50 basic checks',
+              icon: Icons.fact_check_outlined,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildPlanCard(
+              plan: 'paid',
+              title: 'Paid',
+              subtitle: 'Full checklist',
+              icon: Icons.workspace_premium_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanCard({
+    required String plan,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    final selected = _inspectionPlan == plan;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => setState(() => _inspectionPlan = plan),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: const BoxConstraints(minHeight: 70),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppColors.coral : AppColors.neutral200,
+            width: selected ? 1.4 : 1,
+          ),
+          boxShadow: selected ? AppColors.shadowSm : const [],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: selected ? AppColors.coral : AppColors.neutral600,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppStyles.labelMd.copyWith(
+                      color: AppColors.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppStyles.labelSm.copyWith(
+                      color: AppColors.neutral600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              const Icon(Icons.check_circle, color: AppColors.coral, size: 19),
+          ],
         ),
       ),
     );
@@ -614,91 +752,107 @@ class _SignInScreenState extends State<SignInScreen> {
     final shouldShowOptions =
         enabled && showOptions && visibleOptions.isNotEmpty;
 
-    return Column(
+    return TextFieldTapRegion(
       key: key,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel(label),
-        TextField(
-          controller: controller,
-          enabled: enabled,
-          onTap: onOpen,
-          onTapOutside: (_) {
-            Future<void>.delayed(const Duration(milliseconds: 160), () {
-              if (mounted) _hidePropertyOptions();
-            });
-          },
-          onChanged: (value) {
-            onOpen();
-            onSearchChanged?.call(value);
-            setState(() {});
-          },
-          decoration: AppStyles.buildInputDecoration(
-            hint: hint,
-            prefixIcon: Icon(icon),
-            suffixIcon: SizedBox(
-              width: controller.text.isEmpty ? 48 : 88,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (controller.text.isNotEmpty)
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(label),
+          TextField(
+            controller: controller,
+            enabled: enabled,
+            onTap: onOpen,
+            onTapOutside: (_) {
+              Future<void>.delayed(const Duration(milliseconds: 180), () {
+                if (mounted) _hidePropertyOptions();
+              });
+            },
+            onChanged: (value) {
+              onOpen();
+              onSearchChanged?.call(value);
+              setState(() {});
+            },
+            decoration: AppStyles.buildInputDecoration(
+              hint: hint,
+              prefixIcon: Icon(icon),
+              suffixIcon: SizedBox(
+                width: controller.text.isEmpty ? 48 : 88,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (controller.text.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.close),
+                        onPressed: onClear,
+                      ),
                     IconButton(
-                      tooltip: 'Clear',
-                      icon: const Icon(Icons.close),
-                      onPressed: onClear,
-                    ),
-                  IconButton(
-                    tooltip: showOptions ? 'Close dropdown' : 'Open dropdown',
-                    icon: Icon(
-                      showOptions ? Icons.expand_less : Icons.expand_more,
-                    ),
-                    onPressed: enabled
-                        ? () {
-                            if (showOptions) {
-                              _hidePropertyOptions();
-                            } else {
-                              onOpen();
+                      tooltip: showOptions ? 'Close dropdown' : 'Open dropdown',
+                      icon: Icon(
+                        showOptions ? Icons.expand_less : Icons.expand_more,
+                      ),
+                      onPressed: enabled
+                          ? () {
+                              if (showOptions) {
+                                _hidePropertyOptions();
+                              } else {
+                                onOpen();
+                              }
                             }
-                          }
-                        : null,
-                  ),
-                ],
+                          : null,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        if (shouldShowOptions) ...[
-          const SizedBox(height: 6),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 180),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: AppColors.neutral200),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: AppColors.shadowSm,
+          if (shouldShowOptions) ...[
+            const SizedBox(height: 6),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 260),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: AppColors.neutral200),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: AppColors.shadowSm,
+              ),
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  primary: false,
+                  shrinkWrap: true,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: visibleOptions.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: AppColors.neutral100),
+                  itemBuilder: (context, index) {
+                    final option = visibleOptions[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        option.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: option.propertyCode == null
+                          ? null
+                          : Text(
+                              option.propertyCode!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                      onTap: () => onSelected(option),
+                    );
+                  },
+                ),
+              ),
             ),
-            child: ListView.separated(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              itemCount: visibleOptions.length,
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: AppColors.neutral100),
-              itemBuilder: (context, index) {
-                final option = visibleOptions[index];
-                return ListTile(
-                  dense: true,
-                  title: Text(option.name),
-                  subtitle: option.propertyCode == null
-                      ? null
-                      : Text(option.propertyCode!),
-                  onTap: () => onSelected(option),
-                );
-              },
-            ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -790,6 +944,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _selectedFlat = null;
       _blockController.clear();
       _flatController.clear();
+      _inspectionPlan = 'free';
       _blocks = const [];
       _flats = const [];
       _showSocietyOptions = false;
@@ -929,6 +1084,7 @@ class _SignInScreenState extends State<SignInScreen> {
       InspectionSession.authToken = login.authToken;
       InspectionSession.lastLoginAt = DateTime.now();
       await InspectionDraftStorage.saveSession();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Welcome ${login.displayName}')),
       );
@@ -1021,6 +1177,7 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.mobileNumber = login.phone;
     InspectionSession.authToken = login.authToken;
     InspectionSession.inspectionMode = 'flat';
+    InspectionSession.inspectionPlan = _inspectionPlan;
     InspectionSession.inspectionCode = null;
     InspectionSession.propertyOwnerName = null;
     InspectionSession.propertyOwnerMobile = null;
@@ -1073,6 +1230,7 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
     InspectionSession.inspectionMode = 'society';
+    InspectionSession.inspectionPlan = _inspectionPlan;
     InspectionSession.inspectionCode = null;
     InspectionSession.profileId = society.id;
     InspectionSession.propertyId = society.id;
@@ -1126,6 +1284,7 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
     InspectionSession.inspectionMode = 'individual';
+    InspectionSession.inspectionPlan = 'paid';
     InspectionSession.inspectionCode = inspectionCode;
     InspectionSession.profileId = null;
     InspectionSession.propertyId = inspectionRef;
@@ -1142,6 +1301,7 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
     InspectionSession.inspectionMode = 'individual';
+    InspectionSession.inspectionPlan = 'paid';
     InspectionSession.inspectionCode = inspectionCode;
     InspectionSession.propertyId = inspectionRef;
     InspectionSession.inspectionId = inspectionRef;

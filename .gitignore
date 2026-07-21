@@ -32,6 +32,16 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Local research/scraping artifacts (not part of the inspection app)
+/scrape_cache/
+/tmp_propcheckup_pages/
+/competitor_*.csv
+/urban_company_*.csv
+/kepr_home_services_with_scope*.csv
+/prices
+/scrape_scope_tabs_update.py
+/FIREBASECONFG
+
 # Symbolication related
 app.*.symbols
 

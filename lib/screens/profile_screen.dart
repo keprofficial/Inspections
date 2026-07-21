@@ -12,8 +12,13 @@ import 'signin_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   final Function(BottomNavTab)? onTabChange;
+  final bool showCurrentInspection;
 
-  const ProfileScreen({Key? key, this.onTabChange}) : super(key: key);
+  const ProfileScreen({
+    Key? key,
+    this.onTabChange,
+    this.showCurrentInspection = true,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -96,25 +101,41 @@ class ProfileScreen extends StatelessWidget {
                   future: _loadReportHistory(),
                   builder: (context, snapshot) {
                     final reports = snapshot.data ?? const [];
+                    final currentReports = showCurrentInspection
+                        ? reports
+                            .where(_matchesCurrentInspectionContext)
+                            .toList()
+                        : reports;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _section(
-                          title: 'Current Inspection',
+                          title: showCurrentInspection
+                              ? 'Current Inspection'
+                              : 'Latest Reports',
                           children: [
-                            _detail('Society',
-                                InspectionSession.societyName ?? '-'),
-                            _detail('Inspection Type',
-                                _inspectionTypeLabel(inspectionType)),
-                            _detail(scopeLabel, InspectionSession.flatNumber ?? '-'),
-                            _detail(
-                              'Inspection Code',
-                              InspectionSession.inspectionCode ??
-                                  InspectionSession.keprId ??
-                                  '-',
-                            ),
-                            _detail('Inspection ID',
-                                InspectionSession.inspectionId ?? '-'),
+                            if (showCurrentInspection) ...[
+                              _detail('Society',
+                                  InspectionSession.societyName ?? '-'),
+                              _detail('Inspection Type',
+                                  _inspectionTypeLabel(inspectionType)),
+                              _detail(scopeLabel,
+                                  InspectionSession.flatNumber ?? '-'),
+                              _detail(
+                                'Inspection Code',
+                                InspectionSession.inspectionCode ??
+                                    InspectionSession.keprId ??
+                                    '-',
+                              ),
+                              _detail('Inspection ID',
+                                  InspectionSession.inspectionId ?? '-'),
+                            ] else
+                              Text(
+                                'Select a flat, society, or individual property to start a new inspection.',
+                                style: AppStyles.bodySm.copyWith(
+                                  color: AppColors.neutral600,
+                                ),
+                              ),
                             const SizedBox(height: 4),
                             Text(
                               'Last 3 Reports',
@@ -124,7 +145,7 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            if (reports.isEmpty)
+                            if (currentReports.isEmpty)
                               Text(
                                 'No uploaded reports found yet.',
                                 style: AppStyles.bodySm.copyWith(
@@ -132,7 +153,7 @@ class ProfileScreen extends StatelessWidget {
                                 ),
                               )
                             else
-                              for (final report in reports.take(3))
+                              for (final report in currentReports.take(3))
                                 _submittedReportTile(context, report,
                                     compact: true),
                           ],
@@ -312,7 +333,7 @@ class ProfileScreen extends StatelessWidget {
     }
     final reports = byId.values.toList()
       ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-    return reports.where(_matchesCurrentInspectionContext).toList();
+    return reports;
   }
 
   bool _matchesCurrentInspectionContext(SubmittedInspectionReport report) {

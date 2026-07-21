@@ -30,6 +30,7 @@ class _InspectionsDashboardScreenState
   late List<InspectionArea> areas;
   List<InspectionAreaTemplate> availableTemplates = const [];
   bool _isFinalSubmitting = false;
+  bool _didRestoreActiveArea = false;
 
   int get completedItems => areas.fold(
         0,
@@ -173,6 +174,7 @@ class _InspectionsDashboardScreenState
 
   Future<void> _loadChecklistAndDraft() async {
     final inspectionType = InspectionSession.inspectionMode ?? 'flat';
+    final inspectionPlan = InspectionSession.inspectionPlan ?? 'paid';
     late final String inspectionKind;
     try {
       inspectionKind = await SupabaseRepository.instance
@@ -188,13 +190,27 @@ class _InspectionsDashboardScreenState
     final remoteTemplates =
         await SupabaseRepository.instance.fetchChecklistTemplates(
       inspectionKind: inspectionKind,
+      inspectionPlan: inspectionPlan,
       defaultsOnly: true,
     );
+    final serverAreas = await SupabaseRepository.instance.loadInspectionDraft();
+    final localAreas = await InspectionDraftStorage.loadAreas();
+    final existingDraft = serverAreas ?? localAreas;
+
     if (mounted && remoteTemplates.isNotEmpty) {
+      final initialAreas = buildInspectionAreasFromTemplates(remoteTemplates);
       setState(() {
         availableTemplates = remoteTemplates;
-        areas = buildInspectionAreasFromTemplates(remoteTemplates);
+        areas = existingDraft == null || existingDraft.isEmpty
+            ? initialAreas
+            : existingDraft;
       });
+      if (existingDraft == null || existingDraft.isEmpty) {
+        await InspectionDraftStorage.saveAreas(initialAreas);
+        await SupabaseRepository.instance.saveInspectionDraft(
+          areas: initialAreas,
+        );
+      }
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -205,18 +221,58 @@ class _InspectionsDashboardScreenState
       );
     }
 
-    final cachedAreas = await InspectionDraftStorage.loadAreas();
+    final cachedAreas = existingDraft;
     if (!mounted || cachedAreas == null || cachedAreas.isEmpty) return;
     final normalizedAreas = ensureRequiredAreaChecks(cachedAreas);
     setState(() => areas = normalizedAreas);
     if (normalizedAreas.length == cachedAreas.length) {
       await InspectionDraftStorage.saveAreas(normalizedAreas);
+      await SupabaseRepository.instance.saveInspectionDraft(
+        areas: normalizedAreas,
+      );
     }
+    await _restoreActiveAreaIfNeeded();
   }
 
   Future<void> _saveDraft() async {
     await InspectionDraftStorage.saveSession();
     await InspectionDraftStorage.saveAreas(areas);
+    await SupabaseRepository.instance.saveInspectionDraft(areas: areas);
+  }
+
+  Future<void> _restoreActiveAreaIfNeeded() async {
+    if (_didRestoreActiveArea || areas.isEmpty) return;
+    _didRestoreActiveArea = true;
+
+    final activePage = await InspectionDraftStorage.loadActivePage();
+    final activeAreaId = await InspectionDraftStorage.loadActiveAreaId();
+    if (activePage != 'area' || activeAreaId == null || activeAreaId.isEmpty) {
+      await InspectionDraftStorage.setActiveInspectionPage();
+      return;
+    }
+
+    final area = areas.firstWhere(
+      (candidate) => candidate.id == activeAreaId,
+      orElse: () => areas.first,
+    );
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final updatedArea = await Navigator.push<InspectionArea>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => InspectionAreaScreen(area: area),
+        ),
+      );
+      await InspectionDraftStorage.setActiveInspectionPage();
+      if (updatedArea == null || !mounted) return;
+      setState(() {
+        final index =
+            areas.indexWhere((candidate) => candidate.id == updatedArea.id);
+        if (index != -1) areas[index] = updatedArea;
+      });
+      await _saveDraft();
+    });
   }
 
   void _showNotifications() {
@@ -445,6 +501,7 @@ class _InspectionsDashboardScreenState
         SnackBar(
           content: Text(
             'Report submitted. '
+            'Health score ${submitResult?.healthScore ?? '-'} uploaded. '
             '${submitResult?.criticalIssueRows ?? 0} critical service rows uploaded.',
           ),
         ),
@@ -718,12 +775,15 @@ class _InspectionsDashboardScreenState
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () async {
+            await _saveDraft();
+            await InspectionDraftStorage.setActiveAreaPage(area.id);
             final updatedArea = await Navigator.push<InspectionArea>(
               context,
               MaterialPageRoute(
                 builder: (context) => InspectionAreaScreen(area: area),
               ),
             );
+            await InspectionDraftStorage.setActiveInspectionPage();
             if (updatedArea == null) return;
             setState(() {
               final index =

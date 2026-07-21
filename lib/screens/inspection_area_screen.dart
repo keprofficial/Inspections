@@ -28,6 +28,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   void initState() {
     super.initState();
     items = [...widget.area.items];
+    InspectionDraftStorage.setActiveAreaPage(widget.area.id);
   }
 
   int get completedCount => items.where((item) => item.completed).length;
@@ -148,6 +149,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
     final currentArea = _currentArea();
     setState(() => _isSubmitting = true);
     try {
+      await _persistCurrentArea(currentArea);
       final inspectionId = InspectionSession.inspectionId;
       if (inspectionId != null) {
         await SupabaseRepository.instance.submitArea(
@@ -155,7 +157,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
           area: currentArea,
         );
       }
-      await InspectionDraftStorage.saveArea(currentArea);
+      await InspectionDraftStorage.setActiveInspectionPage();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Section submitted!')),
@@ -172,16 +174,25 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   }
 
   void _closeWithCurrentArea() {
-    InspectionDraftStorage.saveArea(_currentArea());
+    _persistCurrentArea(_currentArea());
+    InspectionDraftStorage.setActiveInspectionPage();
     Navigator.pop(context, _currentArea());
   }
 
   Future<void> _saveDraft() async {
-    await InspectionDraftStorage.saveArea(_currentArea());
+    await _persistCurrentArea(_currentArea());
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Draft saved locally')),
     );
+  }
+
+  Future<void> _persistCurrentArea(InspectionArea area) async {
+    await InspectionDraftStorage.saveSession();
+    await InspectionDraftStorage.saveArea(area);
+    final areas = await InspectionDraftStorage.loadAreas();
+    if (areas == null || areas.isEmpty) return;
+    await SupabaseRepository.instance.saveInspectionDraft(areas: areas);
   }
 
   InspectionArea _currentArea() {
@@ -260,7 +271,7 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
         setState(() {
           items[index] = updatedItem;
         });
-        await InspectionDraftStorage.saveArea(_currentArea());
+        await _persistCurrentArea(_currentArea());
       },
       child: Opacity(
         opacity: item.completed ? 0.6 : 1.0,

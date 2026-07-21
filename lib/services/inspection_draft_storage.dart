@@ -10,7 +10,15 @@ class InspectionDraftStorage {
 
   static const _sessionKey = 'kepr.inspection.session.v1';
   static const _areasKey = 'kepr.inspection.areas.v1';
+  static const _activePageKey = 'kepr.inspection.active_page.v1';
+  static const _activeAreaKey = 'kepr.inspection.active_area.v1';
   static const _submittedReportsKey = 'kepr.inspection.submitted_reports.v1';
+
+  static String get _activeAreasKey {
+    final inspectionId = InspectionSession.inspectionId;
+    if (inspectionId == null || inspectionId.isEmpty) return _areasKey;
+    return '$_areasKey.$inspectionId';
+  }
 
   static Future<void> restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,6 +39,7 @@ class InspectionDraftStorage {
       InspectionSession.mobileNumber = data['mobileNumber']?.toString();
       InspectionSession.authToken = data['authToken']?.toString();
       InspectionSession.inspectionMode = data['inspectionMode']?.toString();
+      InspectionSession.inspectionPlan = data['inspectionPlan']?.toString();
       InspectionSession.propertyOwnerName =
           data['propertyOwnerName']?.toString();
       InspectionSession.propertyOwnerMobile =
@@ -60,6 +69,7 @@ class InspectionDraftStorage {
         'mobileNumber': InspectionSession.mobileNumber,
         'authToken': InspectionSession.authToken,
         'inspectionMode': InspectionSession.inspectionMode,
+        'inspectionPlan': InspectionSession.inspectionPlan,
         'propertyOwnerName': InspectionSession.propertyOwnerName,
         'propertyOwnerMobile': InspectionSession.propertyOwnerMobile,
         'lastLoginAt': InspectionSession.lastLoginAt?.toIso8601String(),
@@ -69,7 +79,7 @@ class InspectionDraftStorage {
 
   static Future<List<InspectionArea>?> loadAreas() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_areasKey);
+    final raw = prefs.getString(_activeAreasKey);
     if (raw == null || raw.isEmpty) return null;
 
     try {
@@ -81,7 +91,7 @@ class InspectionDraftStorage {
               ))
           .toList(growable: false);
     } catch (_) {
-      await prefs.remove(_areasKey);
+      await prefs.remove(_activeAreasKey);
       return null;
     }
   }
@@ -89,14 +99,17 @@ class InspectionDraftStorage {
   static Future<void> saveAreas(List<InspectionArea> areas) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _areasKey,
+      _activeAreasKey,
       jsonEncode(areas.map((area) => area.toJson()).toList()),
     );
   }
 
   static Future<void> saveArea(InspectionArea area) async {
     final areas = await loadAreas();
-    if (areas == null) return;
+    if (areas == null || areas.isEmpty) {
+      await saveAreas([area]);
+      return;
+    }
 
     final updated = areas.map((current) {
       return current.id == area.id ? area : current;
@@ -104,21 +117,51 @@ class InspectionDraftStorage {
     await saveAreas(updated);
   }
 
+  static Future<void> setActiveInspectionPage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activePageKey, 'dashboard');
+    await prefs.remove(_activeAreaKey);
+  }
+
+  static Future<void> setActiveAreaPage(String areaId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activePageKey, 'area');
+    await prefs.setString(_activeAreaKey, areaId);
+  }
+
+  static Future<String?> loadActivePage() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activePageKey);
+  }
+
+  static Future<String?> loadActiveAreaId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeAreaKey);
+  }
+
   static Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_sessionKey);
-    await prefs.remove(_areasKey);
+    final areaKeys =
+        prefs.getKeys().where((key) => key.startsWith(_areasKey)).toList();
+    for (final key in areaKeys) {
+      await prefs.remove(key);
+    }
+    await prefs.remove(_activePageKey);
+    await prefs.remove(_activeAreaKey);
     await prefs.remove(_submittedReportsKey);
   }
 
   static Future<void> clearAreas() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_areasKey);
+    await prefs.remove(_activeAreasKey);
   }
 
   static Future<void> clearInspectionDraft() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_areasKey);
+    await prefs.remove(_activeAreasKey);
+    await prefs.remove(_activePageKey);
+    await prefs.remove(_activeAreaKey);
     InspectionSession.clearInspection();
     await saveSession();
   }
