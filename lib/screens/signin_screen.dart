@@ -1165,6 +1165,7 @@ class _SignInScreenState extends State<SignInScreen> {
       throw Exception('Please sign in first.');
     }
     await InspectionDraftStorage.clearAreas();
+    InspectionSession.beginInspectionScope('flat');
     final login = SupabaseRepository.instance.createInspectorLoginFromSelection(
       authenticatedInspector: authenticatedInspector,
       society: _selectedSociety!,
@@ -1176,7 +1177,6 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.inspectorName = login.displayName;
     InspectionSession.mobileNumber = login.phone;
     InspectionSession.authToken = login.authToken;
-    InspectionSession.inspectionMode = 'flat';
     InspectionSession.inspectionPlan = _inspectionPlan;
     InspectionSession.inspectionCode = null;
     InspectionSession.propertyOwnerName = null;
@@ -1197,8 +1197,11 @@ class _SignInScreenState extends State<SignInScreen> {
             'Flat Inspection - ${property.block ?? property.propertyName ?? property.propertyCode ?? property.propertyId}',
         inspectorName: login.displayName,
       );
-      InspectionSession.inspectionId = started?.inspectionId;
-      InspectionSession.inspectionCode = started?.inspectionCode;
+      if (started == null || started.inspectionType != 'flat') {
+        throw Exception('Database did not create a flat inspection.');
+      }
+      InspectionSession.inspectionId = started.inspectionId;
+      InspectionSession.inspectionCode = started.inspectionCode;
     }
     await InspectionDraftStorage.saveSession();
 
@@ -1225,11 +1228,11 @@ class _SignInScreenState extends State<SignInScreen> {
     }
 
     await InspectionDraftStorage.clearAreas();
+    InspectionSession.beginInspectionScope('society');
     InspectionSession.inspectorId = authenticatedInspector.userId;
     InspectionSession.inspectorName = authenticatedInspector.displayName;
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
-    InspectionSession.inspectionMode = 'society';
     InspectionSession.inspectionPlan = _inspectionPlan;
     InspectionSession.inspectionCode = null;
     InspectionSession.profileId = society.id;
@@ -1246,8 +1249,11 @@ class _SignInScreenState extends State<SignInScreen> {
       title: 'Society Inspection - ${society.name}',
       inspectorName: authenticatedInspector.displayName,
     );
-    InspectionSession.inspectionId = started?.inspectionId;
-    InspectionSession.inspectionCode = started?.inspectionCode;
+    if (started == null || started.inspectionType != 'society') {
+      throw Exception('Database did not create a society inspection.');
+    }
+    InspectionSession.inspectionId = started.inspectionId;
+    InspectionSession.inspectionCode = started.inspectionCode;
 
     await InspectionDraftStorage.saveSession();
 
@@ -1279,28 +1285,12 @@ class _SignInScreenState extends State<SignInScreen> {
       inspectionType: 'individual',
     );
 
-    InspectionSession.inspectorId = authenticatedInspector.userId;
-    InspectionSession.inspectorName = authenticatedInspector.displayName;
-    InspectionSession.mobileNumber = authenticatedInspector.phone;
-    InspectionSession.authToken = authenticatedInspector.authToken;
-    InspectionSession.inspectionMode = 'individual';
-    InspectionSession.inspectionPlan = 'paid';
-    InspectionSession.inspectionCode = inspectionCode;
-    InspectionSession.profileId = null;
-    InspectionSession.propertyId = inspectionRef;
-    InspectionSession.inspectionId = inspectionRef;
-    InspectionSession.keprId = null;
-    InspectionSession.societyName = propertyName;
-    InspectionSession.flatNumber = 'Owner: $ownerName';
-    InspectionSession.propertyOwnerName = ownerName;
-    InspectionSession.propertyOwnerMobile = ownerMobile;
-
     await InspectionDraftStorage.clearInspectionDraft();
+    InspectionSession.beginInspectionScope('individual');
     InspectionSession.inspectorId = authenticatedInspector.userId;
     InspectionSession.inspectorName = authenticatedInspector.displayName;
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
-    InspectionSession.inspectionMode = 'individual';
     InspectionSession.inspectionPlan = 'paid';
     InspectionSession.inspectionCode = inspectionCode;
     InspectionSession.propertyId = inspectionRef;

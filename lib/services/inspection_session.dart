@@ -62,6 +62,13 @@ class InspectionSession {
   static bool get isSocietyInspection => _inspectionMode == 'society';
   static bool get isFreeInspection => _inspectionPlan == 'free';
 
+  /// Clears the previous property's inspection state while preserving the
+  /// authenticated inspector. Call before starting any new inspection mode.
+  static void beginInspectionScope(String mode) {
+    clearInspection();
+    _inspectionMode = mode;
+  }
+
   static void clear() {
     _profileId = null;
     _propertyId = null;

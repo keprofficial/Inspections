@@ -471,6 +471,7 @@ class _InspectionsDashboardScreenState
         bytes: pdfBytes,
         propertyId: propertyId,
         inspectionId: inspectionId,
+        inspectionType: InspectionSession.inspectionMode ?? 'flat',
         societyName: societyName,
       );
       if (reportUrl.isEmpty) {
@@ -538,6 +539,7 @@ class _InspectionsDashboardScreenState
       bytes: pdfBytes,
       propertyId: propertyId,
       inspectionId: inspectionId,
+      inspectionType: 'individual',
       societyName: propertyName,
     );
     if (reportUrl.isEmpty) {

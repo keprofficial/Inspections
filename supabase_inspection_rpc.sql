@@ -285,6 +285,7 @@ declare
   v_session_token uuid;
   v_inspection_type text;
   v_inspection_code text;
+  v_property_type text;
 begin
   if nullif(trim(coalesce(p_property_id, '')), '') is null then
     raise exception 'property_id is required';
@@ -319,12 +320,23 @@ begin
     raise exception 'Invalid or expired inspector session';
   end if;
 
-  if not exists (
-    select 1
-    from public.properties
-    where id = v_property_id
-  ) then
+  select p.type
+  into v_property_type
+  from public.properties p
+  where p.id = v_property_id;
+
+  if v_property_type is null then
     raise exception 'property_id % does not exist', v_property_id;
+  end if;
+
+  if v_inspection_type = 'society' and v_property_type <> 'society' then
+    raise exception 'Society inspection must target a society property, not %',
+      v_property_type;
+  end if;
+
+  if v_inspection_type = 'flat' and v_property_type <> 'flat' then
+    raise exception 'Flat inspection must target a flat property, not %',
+      v_property_type;
   end if;
 
   insert into public.inspections (

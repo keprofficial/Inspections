@@ -764,6 +764,7 @@ class SupabaseRepository {
   Future<String> uploadInspectionReportPdf({
     required List<int> bytes,
     required String inspectionId,
+    required String inspectionType,
     String? propertyId,
     String? societyName,
   }) async {
@@ -774,6 +775,7 @@ class SupabaseRepository {
     final safeFileName =
         '${DateTime.now().microsecondsSinceEpoch}_kepr_full_report.pdf';
     final storagePath = [
+      inspectionType,
       propertyId ?? 'local-property',
       inspectionId,
       'reports',
@@ -782,6 +784,7 @@ class SupabaseRepository {
     ].join('/');
     final fallbackStoragePath = [
       'reports',
+      inspectionType,
       propertyId ?? 'local-property',
       safeFileName,
     ].join('/');
