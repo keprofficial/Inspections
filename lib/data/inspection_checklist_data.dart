@@ -2349,12 +2349,11 @@ InspectionItem _wallDampnessCheckForArea({
 }) {
   return InspectionItem(
     id: '$key-wall-dampness-check',
-    name:
-        'Check dampness on all walls and capture multiple wall photos for evidence',
+    name: 'Check dampness on all walls',
     category: 'Leakage/Seepage',
     inspectionType: 'Wall Dampness Multi-Photo Check',
     description:
-        'Inspect every accessible wall in $name for dampness, seepage, bubbling paint, staining, or moisture patches. Capture separate live photos for multiple walls before marking complete.',
+        'Inspect every accessible wall in $name for dampness, seepage, bubbling paint, staining, or moisture patches. Add live photos when evidence is needed.',
     howTo: 'Source: KEPR room-wise dampness control requirement',
     equipmentNeeded: 'Device camera, moisture meter if available',
     severity: 'high',

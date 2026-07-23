@@ -131,10 +131,8 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   bool get _requiresPhotoEvidence =>
       selectedSeverity == 'high' || selectedSeverity == 'critical';
 
-  bool get _hasMissingRequiredPhotos {
-    if (_isWallDampnessCheck) return photoNames.length < 2;
-    return _requiresPhotoEvidence && photoNames.isEmpty;
-  }
+  bool get _hasMissingRequiredPhotos =>
+      _requiresPhotoEvidence && photoNames.isEmpty;
 
   bool get _canMarkCompleted => !_hasMissingRequiredPhotos;
 
@@ -146,9 +144,6 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
 
   bool get _isMissingRequiredNotes =>
       _requiresTechnicianNotes && notesController.text.trim().isEmpty;
-
-  bool get _isWallDampnessCheck =>
-      widget.item.id.endsWith('-wall-dampness-check');
 
   void _toggleService(ServiceMatch service) {
     setState(() {
@@ -258,14 +253,13 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   }
 
   void _showPhotoRequiredPopup() {
-    final message = _isWallDampnessCheck
-        ? 'Capture at least 2 live wall photos before marking this check complete.'
-        : 'High and critical issues must include at least one live photo before marking complete.';
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Photo required'),
-        content: Text(message),
+        content: const Text(
+          'High and critical issues must include at least one live photo before marking complete.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -455,22 +449,12 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     child: KeprButton(
                       label: _isCapturingPhoto
                           ? 'Capturing...'
-                          : _isWallDampnessCheck
-                              ? 'Capture Wall Photo ${photoNames.length + 1}'
-                              : 'Capture Live Photo',
+                          : 'Capture Live Photo',
                       icon: const Icon(Icons.photo_camera, color: Colors.white),
                       isLoading: _isCapturingPhoto,
                       onPressed: _isCapturingPhoto ? null : _capturePhoto,
                     ),
                   ),
-                  if (_isWallDampnessCheck) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Capture at least 2 live photos from different walls. Add more photos if the room has more affected walls.',
-                      style: AppStyles.bodySm
-                          .copyWith(color: AppColors.neutral600),
-                    ),
-                  ],
                   if (photoNames.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
@@ -527,16 +511,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     style:
                         AppStyles.bodySm.copyWith(color: AppColors.neutral500),
                   ),
-                  if (_isWallDampnessCheck && photoNames.length < 2) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Minimum ${2 - photoNames.length} more wall photo(s) required before completion.',
-                      style: AppStyles.bodySm.copyWith(color: AppColors.error),
-                    ),
-                  ],
-                  if (!_isWallDampnessCheck &&
-                      _requiresPhotoEvidence &&
-                      photoNames.isEmpty) ...[
+                  if (_requiresPhotoEvidence && photoNames.isEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
                       'At least 1 live photo is required for high and critical issues.',

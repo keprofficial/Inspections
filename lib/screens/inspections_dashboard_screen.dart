@@ -1054,7 +1054,7 @@ class _InspectionsDashboardScreenState
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'This creates a custom inspection area with your check and the mandatory wall dampness multi-photo check.',
+                      'This creates a custom inspection area with your check and the standard wall dampness check.',
                       style: AppStyles.bodySm.copyWith(
                         color: AppColors.neutral500,
                       ),
