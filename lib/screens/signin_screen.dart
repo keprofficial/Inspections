@@ -110,10 +110,6 @@ class _SignInScreenState extends State<SignInScreen> {
       _mobileController.text.trim().length >= 8 &&
       _passwordController.text.isNotEmpty;
 
-  bool get _supportsFreePaidPlan =>
-      _inspectionMode == _InspectionMode.flat ||
-      _inspectionMode == _InspectionMode.society;
-
   void _openProfile() {
     Navigator.push(
       context,
@@ -248,10 +244,8 @@ class _SignInScreenState extends State<SignInScreen> {
                         if (_authenticatedInspector != null) ...[
                           const SizedBox(height: 18),
                           _buildInspectionModeSelector(),
-                          if (_supportsFreePaidPlan) ...[
-                            const SizedBox(height: 18),
-                            _buildInspectionPlanSelector(),
-                          ],
+                          const SizedBox(height: 18),
+                          _buildInspectionPlanSelector(),
                           const SizedBox(height: 18),
                           if (_inspectionMode == _InspectionMode.flat)
                             ..._buildFlatInspectionFields()
@@ -373,8 +367,6 @@ class _SignInScreenState extends State<SignInScreen> {
         borderRadius: BorderRadius.circular(8),
         onTap: () => setState(() {
           _inspectionMode = mode;
-          _inspectionPlan =
-              mode == _InspectionMode.individual ? 'paid' : _inspectionPlan;
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -1301,7 +1293,7 @@ class _SignInScreenState extends State<SignInScreen> {
     InspectionSession.inspectorName = authenticatedInspector.displayName;
     InspectionSession.mobileNumber = authenticatedInspector.phone;
     InspectionSession.authToken = authenticatedInspector.authToken;
-    InspectionSession.inspectionPlan = 'paid';
+    InspectionSession.inspectionPlan = _inspectionPlan;
     InspectionSession.inspectionCode = inspectionCode;
     InspectionSession.propertyId = inspectionRef;
     InspectionSession.inspectionId = inspectionRef;
