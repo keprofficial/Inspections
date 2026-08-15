@@ -68,8 +68,9 @@ class _SignInScreenState extends State<SignInScreen> {
         phone: InspectionSession.mobileNumber,
         authToken: InspectionSession.authToken,
       );
+      final savedPlan = InspectionSession.inspectionPlan;
       _inspectionPlan =
-          InspectionSession.inspectionPlan == 'paid' ? 'paid' : 'free';
+          savedPlan == 'paid' || savedPlan == 'adhoc' ? savedPlan! : 'free';
     } else if ((InspectionSession.authToken ?? '').isNotEmpty) {
       InspectionSession.clearInspectorAuth();
       InspectionDraftStorage.saveSession();
@@ -510,6 +511,15 @@ class _SignInScreenState extends State<SignInScreen> {
               title: 'Free',
               subtitle: '50 basic checks',
               icon: Icons.fact_check_outlined,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildPlanCard(
+              plan: 'adhoc',
+              title: 'Adhoc',
+              subtitle: 'Custom checks',
+              icon: Icons.playlist_add_check_outlined,
             ),
           ),
           const SizedBox(width: 8),

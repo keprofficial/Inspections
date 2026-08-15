@@ -61,6 +61,7 @@ class InspectionSession {
   static bool get isIndividualInspection => _inspectionMode == 'individual';
   static bool get isSocietyInspection => _inspectionMode == 'society';
   static bool get isFreeInspection => _inspectionPlan == 'free';
+  static bool get isAdhocInspection => _inspectionPlan == 'adhoc';
 
   /// Clears the previous property's inspection state while preserving the
   /// authenticated inspector. Call before starting any new inspection mode.

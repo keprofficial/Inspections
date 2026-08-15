@@ -49,10 +49,22 @@ class ReportPdfService {
 
   static Future<Uint8List> buildCompleteReport(List<InspectionArea> areas) {
     return _buildReport(
-      title: 'Home Inspection Report',
+      title: _completeReportTitle(),
       rows: _itemsWithArea(areas).toList(),
       includeAllChecks: true,
     );
+  }
+
+  static String _completeReportTitle() {
+    switch (InspectionSession.inspectionMode) {
+      case 'society':
+        return 'Apartment Inspection Report';
+      case 'individual':
+        return 'Individual Home Inspection Report';
+      case 'flat':
+      default:
+        return 'Flat Inspection Report';
+    }
   }
 
   static Future<Uint8List> _buildReport({
@@ -533,7 +545,7 @@ class ReportPdfService {
         children: [
           pw.Expanded(
             child: pw.Text(
-              'Home Inspection Report | KEPR | Confidential',
+              '${_completeReportTitle()} | KEPR | Confidential',
               style: const pw.TextStyle(fontSize: 7),
             ),
           ),

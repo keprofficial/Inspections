@@ -175,6 +175,19 @@ class _InspectionsDashboardScreenState
   Future<void> _loadChecklistAndDraft() async {
     final inspectionType = InspectionSession.inspectionMode ?? 'flat';
     final inspectionPlan = InspectionSession.inspectionPlan ?? 'paid';
+    if (inspectionPlan == 'adhoc') {
+      final serverAreas =
+          await SupabaseRepository.instance.loadInspectionDraft();
+      final localAreas = await InspectionDraftStorage.loadAreas();
+      final existingDraft = serverAreas ?? localAreas ?? <InspectionArea>[];
+      if (!mounted) return;
+      setState(() {
+        availableTemplates = const [];
+        areas = existingDraft;
+      });
+      await _restoreActiveAreaIfNeeded();
+      return;
+    }
     late final String inspectionKind;
     try {
       inspectionKind = await SupabaseRepository.instance
@@ -449,7 +462,13 @@ class _InspectionsDashboardScreenState
   Future<void> _finalSubmit() async {
     setState(() => _isFinalSubmitting = true);
     try {
-      areas = ensureRequiredAreaChecks(areas);
+      if (InspectionSession.isAdhocInspection) {
+        if (totalItems == 0) {
+          throw Exception('Add at least one custom inspection check first.');
+        }
+      } else {
+        areas = ensureRequiredAreaChecks(areas);
+      }
       if (InspectionSession.isIndividualInspection) {
         await _finalSubmitIndividualInspection();
         return;
@@ -899,6 +918,10 @@ class _InspectionsDashboardScreenState
   }
 
   void _showAddAreaSheet() {
+    if (InspectionSession.isAdhocInspection) {
+      _showAddAdhocInspectionSheet();
+      return;
+    }
     final nameController = TextEditingController();
     final customAreaController = TextEditingController();
     final customInspectionController = TextEditingController();
@@ -1257,6 +1280,118 @@ class _InspectionsDashboardScreenState
           },
         );
       },
+    );
+  }
+
+  void _showAddAdhocInspectionSheet() {
+    final areaController = TextEditingController();
+    final checkController = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 20,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Add custom inspection',
+                  style: AppStyles.headlineMd.copyWith(
+                    color: AppColors.navy,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('Area name',
+                style: AppStyles.labelMd.copyWith(color: AppColors.navy)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: areaController,
+              decoration: AppStyles.buildInputDecoration(
+                hint: 'e.g. Utility Room, Terrace, Store Room',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Inspection check',
+                style: AppStyles.labelMd.copyWith(color: AppColors.navy)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: checkController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: AppStyles.buildInputDecoration(
+                hint: 'Describe the custom check',
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: KeprButton(
+                label: 'Add Custom Inspection',
+                icon: const Icon(Icons.add, color: Colors.white),
+                onPressed: () {
+                  final areaName = areaController.text.trim();
+                  final checkName = checkController.text.trim();
+                  if (areaName.isEmpty || checkName.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Enter both area name and inspection check.'),
+                      ),
+                    );
+                    return;
+                  }
+                  final key = 'adhoc-${DateTime.now().millisecondsSinceEpoch}';
+                  final item = InspectionItem(
+                    id: '$key-1',
+                    name: checkName,
+                    category: 'Adhoc Inspection',
+                    inspectionType: 'Custom Check',
+                    description: 'Inspector-defined check for $areaName.',
+                    howTo: 'Source: Adhoc inspector checklist',
+                    equipmentNeeded: 'Manual check, device camera',
+                    severity: 'medium',
+                    completed: false,
+                  );
+                  final newArea = InspectionArea(
+                    id: 'area-$key',
+                    name: areaName,
+                    icon: 'build',
+                    templateKey: key,
+                    progress: 0,
+                    status: 'pending',
+                    issues: 1,
+                    completed: 0,
+                    items: [item],
+                  );
+                  setState(() => areas = [...areas, newArea]);
+                  _saveDraft();
+                  Navigator.pop(sheetContext);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
