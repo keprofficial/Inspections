@@ -418,7 +418,7 @@ class _InspectionsDashboardScreenState
   }
 
   void _validateCriticalIssuesForSubmit() {
-    if (completedItems < 5) {
+    if (!InspectionSession.isAdhocInspection && completedItems < 5) {
       throw Exception(
         'Complete at least 5 inspection checks before submitting. '
         'Current completed checks: $completedItems.',
