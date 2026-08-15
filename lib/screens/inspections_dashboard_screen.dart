@@ -179,12 +179,41 @@ class _InspectionsDashboardScreenState
       final serverAreas =
           await SupabaseRepository.instance.loadInspectionDraft();
       final localAreas = await InspectionDraftStorage.loadAreas();
-      final existingDraft = serverAreas ?? localAreas ?? <InspectionArea>[];
+      final loadedAreas = serverAreas ?? localAreas ?? <InspectionArea>[];
+      final existingDraft = loadedAreas
+          .map((area) {
+            final adhocItems = area.items
+                .where((item) => item.category == 'Adhoc Inspection')
+                .toList(growable: false);
+            final completed = adhocItems.where((item) => item.completed).length;
+            return area.copyWith(
+              items: adhocItems,
+              issues: adhocItems.length,
+              completed: completed,
+              progress: adhocItems.isEmpty
+                  ? 0
+                  : ((completed / adhocItems.length) * 100).round(),
+              status: adhocItems.isNotEmpty && completed == adhocItems.length
+                  ? 'completed'
+                  : 'pending',
+            );
+          })
+          .where((area) => area.items.isNotEmpty)
+          .toList(growable: false);
       if (!mounted) return;
       setState(() {
         availableTemplates = const [];
         areas = existingDraft;
       });
+      if (existingDraft.length != loadedAreas.length ||
+          existingDraft.fold<int>(0, (sum, area) => sum + area.items.length) !=
+              loadedAreas.fold<int>(
+                  0, (sum, area) => sum + area.items.length)) {
+        await InspectionDraftStorage.saveAreas(existingDraft);
+        await SupabaseRepository.instance.saveInspectionDraft(
+          areas: existingDraft,
+        );
+      }
       await _restoreActiveAreaIfNeeded();
       return;
     }
