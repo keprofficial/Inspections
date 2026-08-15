@@ -31,6 +31,8 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   late String selectedSeverity;
   late TextEditingController notesController;
   late TextEditingController serviceSearchController;
+  late ScrollController pageScrollController;
+  late FocusNode notesFocusNode;
   late List<String> photoNames;
   late List<String> photoEvidenceBase64;
   List<ServiceMatch> serviceMatches = const [];
@@ -47,6 +49,8 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     super.initState();
     selectedSeverity = (widget.item.severity ?? 'medium').toLowerCase();
     notesController = TextEditingController(text: widget.item.notes);
+    pageScrollController = ScrollController();
+    notesFocusNode = FocusNode()..addListener(_handleNotesFocus);
     photoNames = [...widget.item.photoPaths];
     photoEvidenceBase64 = [...widget.item.photoEvidenceBase64];
     selectedServices = widget.item.selectedServices
@@ -66,7 +70,23 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   void dispose() {
     notesController.dispose();
     serviceSearchController.dispose();
+    pageScrollController.dispose();
+    notesFocusNode
+      ..removeListener(_handleNotesFocus)
+      ..dispose();
     super.dispose();
+  }
+
+  void _handleNotesFocus() {
+    if (!notesFocusNode.hasFocus) return;
+    Future<void>.delayed(const Duration(milliseconds: 350), () {
+      if (!mounted || !pageScrollController.hasClients) return;
+      pageScrollController.animateTo(
+        pageScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _loadRelatedServices({String? query}) async {
@@ -385,7 +405,9 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: AppColors.neutral50,
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -402,8 +424,14 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
       body: Stack(
         children: [
           SingleChildScrollView(
+            controller: pageScrollController,
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                keyboardInset > 0 ? keyboardInset + 32 : 120,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -563,88 +591,94 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: notesController,
+                    focusNode: notesFocusNode,
                     maxLines: 6,
                     maxLength: maxChars,
+                    style: AppStyles.bodyMd.copyWith(
+                      color: AppColors.navy,
+                      height: 1.4,
+                    ),
+                    cursorColor: AppColors.coral,
                     onChanged: (_) => setState(() {}),
                     decoration: AppStyles.buildInputDecoration(
                       hint:
                           'Describe condition, test results, and required action...',
                     ),
                   ),
-                  const SizedBox(height: 120),
                 ],
               ),
             ),
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: AppColors.neutral200)),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: KeprButton(
-                      label: 'Cancel',
-                      variant: ButtonVariant.secondary,
-                      onPressed: () => Navigator.pop(context),
+          if (keyboardInset == 0)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: AppColors.neutral200)),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: KeprButton(
+                        label: 'Cancel',
+                        variant: ButtonVariant.secondary,
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: KeprButton(
-                      label: 'Mark Completed',
-                      icon: const Icon(Icons.check, color: Colors.white),
-                      enabled: _canMarkCompleted,
-                      onPressed: () {
-                        if (_hasMissingRequiredPhotos) {
-                          _showPhotoRequiredPopup();
-                          return;
-                        }
-                        if (_isMissingRequiredNotes) {
-                          _showTechnicianNotesRequiredPopup();
-                          return;
-                        }
-                        if (_isCriticalWithoutService) {
-                          _showServicesNotAddedPopup();
-                          return;
-                        }
-                        Navigator.pop(
-                          context,
-                          widget.item.copyWith(
-                            completed: true,
-                            severity: selectedSeverity,
-                            notes: notesController.text,
-                            photoPaths: photoNames,
-                            photoEvidenceBase64: photoEvidenceBase64,
-                            serviceCode: _needsServiceEstimate
-                                ? _selectedServiceCodes
-                                : null,
-                            estimatedCost: _needsServiceEstimate
-                                ? _selectedServicesTotal
-                                : null,
-                            materialCodes: _needsServiceEstimate
-                                ? _selectedMaterialCodes
-                                : const [],
-                            selectedServices: _needsServiceEstimate
-                                ? selectedServices
-                                    .map((service) => service.toSelected())
-                                    .toList(growable: false)
-                                : const [],
-                          ),
-                        );
-                      },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: KeprButton(
+                        label: 'Mark Completed',
+                        icon: const Icon(Icons.check, color: Colors.white),
+                        enabled: _canMarkCompleted,
+                        onPressed: () {
+                          if (_hasMissingRequiredPhotos) {
+                            _showPhotoRequiredPopup();
+                            return;
+                          }
+                          if (_isMissingRequiredNotes) {
+                            _showTechnicianNotesRequiredPopup();
+                            return;
+                          }
+                          if (_isCriticalWithoutService) {
+                            _showServicesNotAddedPopup();
+                            return;
+                          }
+                          Navigator.pop(
+                            context,
+                            widget.item.copyWith(
+                              completed: true,
+                              severity: selectedSeverity,
+                              notes: notesController.text,
+                              photoPaths: photoNames,
+                              photoEvidenceBase64: photoEvidenceBase64,
+                              serviceCode: _needsServiceEstimate
+                                  ? _selectedServiceCodes
+                                  : null,
+                              estimatedCost: _needsServiceEstimate
+                                  ? _selectedServicesTotal
+                                  : null,
+                              materialCodes: _needsServiceEstimate
+                                  ? _selectedMaterialCodes
+                                  : const [],
+                              selectedServices: _needsServiceEstimate
+                                  ? selectedServices
+                                      .map((service) => service.toSelected())
+                                      .toList(growable: false)
+                                  : const [],
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
