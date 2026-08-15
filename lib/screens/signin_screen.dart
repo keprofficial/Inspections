@@ -946,7 +946,6 @@ class _SignInScreenState extends State<SignInScreen> {
       _selectedFlat = null;
       _blockController.clear();
       _flatController.clear();
-      _inspectionPlan = 'free';
       _blocks = const [];
       _flats = const [];
       _showSocietyOptions = false;
