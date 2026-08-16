@@ -71,11 +71,10 @@ class _SignInScreenState extends State<SignInScreen> {
         authToken: InspectionSession.authToken,
       );
       final savedPlan = InspectionSession.inspectionPlan;
-      _inspectionPlan = savedPlan == 'free' ||
-              savedPlan == 'paid' ||
-              savedPlan == 'adhoc'
-          ? savedPlan
-          : null;
+      _inspectionPlan =
+          savedPlan == 'free' || savedPlan == 'paid' || savedPlan == 'adhoc'
+              ? savedPlan
+              : null;
     } else if ((InspectionSession.authToken ?? '').isNotEmpty) {
       InspectionSession.clearInspectorAuth();
       InspectionDraftStorage.saveSession();
@@ -335,80 +334,70 @@ class _SignInScreenState extends State<SignInScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 22, 16, 112),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 620),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Good ${_dayPeriod()}, ${inspector.displayName}',
-                      style: AppStyles.headlineMd.copyWith(
-                        color: AppColors.navy,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'What would you like to inspect today?',
-                      style: AppStyles.bodyMd.copyWith(
-                        color: AppColors.neutral600,
-                      ),
-                    ),
-                    if (InspectionSession.isActive) ...[
-                      const SizedBox(height: 20),
-                      _buildResumeInspectionCard(),
-                    ],
-                    const SizedBox(height: 24),
-                    _buildDashboardSectionTitle(
-                      'Choose property',
-                      'Step 1 of 2',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildInspectionModeSelector(),
-                    if (_inspectionMode != null) ...[
-                      const SizedBox(height: 24),
-                      _buildDashboardSectionTitle(
-                        'Choose inspection',
-                        'Step 2 of 2',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInspectionPlanSelector(),
-                    ],
-                    if (canContinue && !_showPropertyFields) ...[
-                      const SizedBox(height: 20),
-                      KeprButton(
-                        label: 'Continue to property details',
-                        showArrow: true,
-                        onPressed: () =>
-                            setState(() => _showPropertyFields = true),
-                      ),
-                    ],
-                    if (_showPropertyFields && canContinue) ...[
-                      const SizedBox(height: 26),
-                      _buildPropertyFieldsCard(),
-                    ],
-                  ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 32),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Good ${_dayPeriod()}, ${inspector.displayName}',
+                  style: AppStyles.headlineMd.copyWith(
+                    color: AppColors.navy,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 6),
+                Text(
+                  'What would you like to inspect today?',
+                  style: AppStyles.bodyMd.copyWith(
+                    color: AppColors.neutral600,
+                  ),
+                ),
+                if (InspectionSession.isActive) ...[
+                  const SizedBox(height: 20),
+                  _buildResumeInspectionCard(),
+                ],
+                const SizedBox(height: 24),
+                _buildDashboardSectionTitle(
+                  'Choose property',
+                  'Step 1 of 2',
+                ),
+                const SizedBox(height: 12),
+                _buildInspectionModeSelector(),
+                if (_inspectionMode != null) ...[
+                  const SizedBox(height: 24),
+                  _buildDashboardSectionTitle(
+                    'Choose inspection',
+                    'Step 2 of 2',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInspectionPlanSelector(),
+                ],
+                if (canContinue && !_showPropertyFields) ...[
+                  const SizedBox(height: 20),
+                  KeprButton(
+                    label: 'Continue to property details',
+                    showArrow: true,
+                    onPressed: () => setState(() => _showPropertyFields = true),
+                  ),
+                ],
+                if (_showPropertyFields && canContinue) ...[
+                  const SizedBox(height: 26),
+                  _buildPropertyFieldsCard(),
+                ],
+              ],
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: BottomNav(
-              activeTab: BottomNavTab.home,
-              onTabChange: (tab) {
-                if (tab == BottomNavTab.profile) _openProfile();
-              },
-            ),
-          ),
-        ],
+        ),
+      ),
+      bottomNavigationBar: BottomNav(
+        activeTab: BottomNavTab.home,
+        onTabChange: (tab) {
+          if (tab == BottomNavTab.profile) _openProfile();
+        },
       ),
     );
   }
