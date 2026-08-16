@@ -1,260 +1,223 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../constants/app_styles.dart';
 import '../constants/colors.dart';
 import '../services/inspection_draft_storage.dart';
 import '../services/inspection_session.dart';
-import '../services/supabase_repository.dart';
+import '../services/report_history_service.dart';
+import '../services/sync_status.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_common.dart';
+import '../widgets/app_sliver_bar.dart';
 import '../widgets/badge.dart';
-import '../widgets/bottom_nav.dart';
-import '../widgets/kepr_header.dart';
 import 'signin_screen.dart';
 
+/// Tab 4 — who is signed in, what the current inspection is, and sign out.
+///
+/// Report history moved to the Reports tab; this screen no longer tries to be
+/// both an identity page and a history page.
 class ProfileScreen extends StatelessWidget {
-  final Function(BottomNavTab)? onTabChange;
-  final bool showCurrentInspection;
-
-  const ProfileScreen({
-    Key? key,
-    this.onTabChange,
-    this.showCurrentInspection = true,
-  }) : super(key: key);
+  const ProfileScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final name = InspectionSession.inspectorName ?? 'Inspector';
-    final initials = _initials(name);
-    final inspectionType = InspectionSession.inspectionMode ?? 'flat';
-    final scopeLabel = inspectionType == 'society'
-        ? 'Scope'
-        : inspectionType == 'individual'
-            ? 'Owner'
-            : 'Flat / Block';
 
-    return Scaffold(
-      backgroundColor: AppColors.neutral50,
-      appBar: KeprHeader(
-        title: 'Profile',
-        subtitle: name,
-        onLogoTap: () => onTabChange?.call(BottomNavTab.home),
-        onNotificationTap: () => _showLastLogin(context),
-        onMenuTap: () => onTabChange?.call(BottomNavTab.home),
-      ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.neutral200),
-                    boxShadow: AppColors.shadowSm,
-                  ),
-                  child: Column(
-                    children: [
-                      CircleAvatar(
-                        radius: 42,
-                        backgroundColor: AppColors.coral,
-                        child: Text(
-                          initials,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        name,
-                        style: AppStyles.headlineMd.copyWith(
-                          color: AppColors.navy,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const AppBadge(
-                        label: 'Logged In',
-                        variant: BadgeVariant.success,
-                      ),
-                    ],
-                  ),
+    return CustomScrollView(
+      slivers: [
+        const AppSliverBar(title: 'Me', subtitle: 'Inspector profile'),
+        SliverToBoxAdapter(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppSizes.contentMaxWidth,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.xl,
+                  AppSpacing.lg,
+                  AppSpacing.xxxl,
                 ),
-                const SizedBox(height: 16),
-                _section(
-                  title: 'Inspector Details',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _detail(
-                        'Inspector ID', InspectionSession.inspectorId ?? '-'),
-                    _detail(
-                        'Mobile Number', InspectionSession.mobileNumber ?? '-'),
-                    _detail('Last Login', _lastLoginText()),
+                    _buildIdentityCard(name),
+                    const SizedBox(height: AppSpacing.lg),
+                    _buildDetailsCard(),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (InspectionSession.isActive) ...[
+                      _buildCurrentInspectionCard(),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    _buildSyncCard(),
+                    const SizedBox(height: AppSpacing.xxl),
+                    OutlinedButton.icon(
+                      onPressed: () => _confirmLogout(context),
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Sign out'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        minimumSize: const Size.fromHeight(
+                          AppSizes.minTapTarget,
+                        ),
+                        side: const BorderSide(color: AppColors.neutral200),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                FutureBuilder<List<SubmittedInspectionReport>>(
-                  future: _loadReportHistory(),
-                  builder: (context, snapshot) {
-                    final reports = snapshot.data ?? const [];
-                    final currentReports = showCurrentInspection
-                        ? reports
-                            .where(_matchesCurrentInspectionContext)
-                            .toList()
-                        : reports;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _section(
-                          title: showCurrentInspection
-                              ? 'Current Inspection'
-                              : 'Latest Reports',
-                          children: [
-                            if (showCurrentInspection) ...[
-                              _detail('Society',
-                                  InspectionSession.societyName ?? '-'),
-                              _detail('Inspection Type',
-                                  _inspectionTypeLabel(inspectionType)),
-                              _detail(scopeLabel,
-                                  InspectionSession.flatNumber ?? '-'),
-                              _detail(
-                                'Inspection Code',
-                                InspectionSession.inspectionCode ??
-                                    InspectionSession.keprId ??
-                                    '-',
-                              ),
-                              _detail('Inspection ID',
-                                  InspectionSession.inspectionId ?? '-'),
-                            ] else
-                              Text(
-                                'Select a flat, society, or individual property to start a new inspection.',
-                                style: AppStyles.bodySm.copyWith(
-                                  color: AppColors.neutral600,
-                                ),
-                              ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Last 3 Reports',
-                              style: AppStyles.labelSm.copyWith(
-                                color: AppColors.neutral500,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            if (currentReports.isEmpty)
-                              Text(
-                                'No uploaded reports found yet.',
-                                style: AppStyles.bodySm.copyWith(
-                                  color: AppColors.neutral500,
-                                ),
-                              )
-                            else
-                              for (final report in currentReports.take(3))
-                                _submittedReportTile(context, report,
-                                    compact: true),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _section(
-                          title: 'Inspections Done',
-                          children: reports.isEmpty
-                              ? [
-                                  Text(
-                                    'No submitted reports yet.',
-                                    style: AppStyles.bodySm.copyWith(
-                                      color: AppColors.neutral500,
-                                    ),
-                                  ),
-                                ]
-                              : [
-                                  for (final report in reports)
-                                    _submittedReportTile(context, report),
-                                ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    InspectionSession.clear();
-                    await InspectionDraftStorage.clearAll();
-                    if (!context.mounted) return;
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SignInScreen()),
-                    );
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Logout'),
-                ),
-                const SizedBox(height: 100),
-              ],
+              ),
             ),
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: BottomNav(
-              activeTab: BottomNavTab.profile,
-              onTabChange: (tab) {
-                if (tab != BottomNavTab.profile) {
-                  onTabChange?.call(tab);
-                }
-              },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIdentityCard(String name) {
+    return AppCard(
+      elevation: AppElevation.raised,
+      padding: const EdgeInsets.all(AppSpacing.xxl),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 38,
+            backgroundColor: AppColors.coral,
+            child: Text(
+              InspectorAvatar.initialsOf(name),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            name,
+            textAlign: TextAlign.center,
+            style: AppStyles.headlineMd.copyWith(
+              color: AppColors.navy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          const AppBadge(label: 'Signed in', variant: BadgeVariant.success),
         ],
       ),
     );
   }
 
-  Widget _section({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.neutral200),
-        boxShadow: AppColors.shadowSm,
-      ),
+  Widget _buildDetailsCard() {
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: AppStyles.labelMd.copyWith(
-              color: AppColors.navy,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...children,
+          const AppSectionHeader(title: 'Inspector details'),
+          const SizedBox(height: AppSpacing.md),
+          _detail('Inspector ID', InspectionSession.inspectorId ?? '-'),
+          _detail('Mobile number', InspectionSession.mobileNumber ?? '-'),
+          _detail('Last login', _lastLoginText(), isLast: true),
         ],
       ),
     );
   }
 
-  Widget _detail(String label, String value) {
+  Widget _buildCurrentInspectionCard() {
+    final mode = InspectionSession.inspectionMode ?? 'flat';
+    final scopeLabel = mode == 'society'
+        ? 'Scope'
+        : mode == 'individual'
+            ? 'Owner'
+            : 'Flat / Block';
+
+    return AppCard(
+      accentColor: AppColors.coral,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionHeader(title: 'Current inspection'),
+          const SizedBox(height: AppSpacing.md),
+          _detail('Property', InspectionSession.societyName ?? '-'),
+          _detail('Type', '${inspectionTypeLabel(mode)} inspection'),
+          _detail(scopeLabel, InspectionSession.flatNumber ?? '-'),
+          _detail(
+            'Inspection code',
+            InspectionSession.inspectionCode ?? InspectionSession.keprId ?? '-',
+          ),
+          _detail(
+            'Inspection ID',
+            InspectionSession.inspectionId ?? '-',
+            isLast: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSyncCard() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppSectionHeader(title: 'Connection'),
+          const SizedBox(height: AppSpacing.md),
+          ValueListenableBuilder<bool>(
+            valueListenable: SyncStatus.instance.isOnline,
+            builder: (context, online, _) {
+              return Row(
+                children: [
+                  Icon(
+                    online ? Icons.cloud_done_outlined : Icons.cloud_off,
+                    size: 18,
+                    color: online ? AppColors.success : AppColors.warning,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      online
+                          ? 'Online — drafts sync to the server.'
+                          : 'Offline — drafts are saved on this device only.',
+                      style: AppStyles.bodySm.copyWith(
+                        color: AppColors.neutral700,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ValueListenableBuilder<DateTime?>(
+            valueListenable: SyncStatus.instance.lastSavedAt,
+            builder: (context, _, __) {
+              return Text(
+                SyncStatus.instance.describeLastSaved(),
+                style: AppStyles.labelSm.copyWith(
+                  color: AppColors.neutral600,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detail(String label, String value, {bool isLast = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 116,
             child: Text(
               label,
-              style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
+              style: AppStyles.labelSm.copyWith(color: AppColors.neutral600),
             ),
           ),
           Expanded(
@@ -271,150 +234,48 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _submittedReportTile(
-      BuildContext context, SubmittedInspectionReport report,
-      {bool compact = false}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.neutral50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.neutral200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            report.societyName,
-            style: AppStyles.labelMd.copyWith(
-              color: AppColors.navy,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${report.flatNumber}'
-            '${report.propertyCode == null ? '' : ' / ${report.propertyCode}'}',
-            style: AppStyles.bodySm.copyWith(color: AppColors.neutral600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _dateTimeText(report.submittedAt),
-            style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
-          ),
-          SizedBox(height: compact ? 4 : 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _openReport(context, report.reportUrl),
-              icon: const Icon(Icons.download),
-              label: Text(compact ? 'Download' : 'Download Report'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<List<SubmittedInspectionReport>> _loadReportHistory() async {
-    final remote =
-        await SupabaseRepository.instance.fetchSubmittedInspectionReports(
-      inspectorId: InspectionSession.inspectorId,
-      inspectorName: InspectionSession.inspectorName,
-      inspectorMobile: InspectionSession.mobileNumber,
-    );
-    final local = await InspectionDraftStorage.loadSubmittedReports();
-    final byId = <String, SubmittedInspectionReport>{};
-    for (final report in [...remote, ...local]) {
-      final key =
-          report.inspectionId.isEmpty ? report.reportUrl : report.inspectionId;
-      byId[key] = report;
-    }
-    final reports = byId.values.toList()
-      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-    return reports;
-  }
-
-  bool _matchesCurrentInspectionContext(SubmittedInspectionReport report) {
-    final currentType = InspectionSession.inspectionMode;
-    if (currentType == null || currentType.isEmpty) return true;
-
-    if ((report.inspectionType ?? '').isNotEmpty &&
-        report.inspectionType != currentType) {
-      return false;
-    }
-
-    final currentPropertyId = InspectionSession.propertyId;
-    if (currentType != 'individual' &&
-        currentPropertyId != null &&
-        currentPropertyId.isNotEmpty &&
-        (report.propertyId ?? '').isNotEmpty) {
-      return report.propertyId == currentPropertyId;
-    }
-
-    return true;
-  }
-
-  Future<void> _openReport(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open report: $url')),
-      );
-    }
-  }
-
-  void _showLastLogin(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Notifications'),
-        content: Text('Last login: ${_lastLoginText()}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _lastLoginText() {
     final value = InspectionSession.lastLoginAt;
     if (value == null) return '-';
-    return '${value.day.toString().padLeft(2, '0')}/'
-        '${value.month.toString().padLeft(2, '0')}/'
-        '${value.year} '
-        '${value.hour.toString().padLeft(2, '0')}:'
-        '${value.minute.toString().padLeft(2, '0')}';
+    return formatReportDateTime(value);
   }
 
-  String _dateTimeText(DateTime value) {
-    return '${value.day.toString().padLeft(2, '0')}/'
-        '${value.month.toString().padLeft(2, '0')}/'
-        '${value.year} '
-        '${value.hour.toString().padLeft(2, '0')}:'
-        '${value.minute.toString().padLeft(2, '0')}';
-  }
+  /// Signing out clears the draft, so it must be confirmed. Previously this
+  /// was a single unguarded tap.
+  Future<void> _confirmLogout(BuildContext context) async {
+    final hasActiveWork = InspectionSession.isActive;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: Text(
+          hasActiveWork
+              ? 'You have an inspection in progress. Signing out clears the '
+                  'draft on this device. Submitted reports are not affected.'
+              : 'You will need your mobile number and password to sign back in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
 
-  String _inspectionTypeLabel(String value) {
-    switch (value) {
-      case 'society':
-        return 'Society Inspection';
-      case 'individual':
-        return 'Individual Home Inspection';
-      default:
-        return 'Flat Inspection';
-    }
-  }
-
-  String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return 'I';
-    return parts.take(2).map((part) => part[0].toUpperCase()).join();
+    if (confirmed != true || !context.mounted) return;
+    InspectionSession.clear();
+    await InspectionDraftStorage.clearAll();
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+      (route) => false,
+    );
   }
 }

@@ -125,8 +125,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final canPreview =
-        controller != null &&
+    final canPreview = controller != null &&
         controller.value.isInitialized &&
         !_isInitializing;
 
@@ -156,8 +155,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                 child: _error != null
                     ? _buildErrorState()
                     : canPreview
-                    ? _buildPreview(controller)
-                    : const CircularProgressIndicator(color: AppColors.coral),
+                        ? _buildPreview(controller)
+                        : const CircularProgressIndicator(
+                            color: AppColors.coral),
               ),
             ),
             Container(

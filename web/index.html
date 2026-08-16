@@ -18,18 +18,26 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="KEPR inspections — flat, society, and individual home safety inspections.">
+
+  <!--
+    Required for a phone browser. Without it mobile browsers assume a 980px
+    layout viewport and render the whole app zoomed out.
+    `user-scalable` is deliberately NOT disabled so pinch-zoom still works.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#F85F5A">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="kepr">
+  <meta name="apple-mobile-web-app-title" content="KEPR Inspections">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>kepr</title>
+  <title>KEPR Inspections</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
@@ -41,6 +49,19 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    // Guards against closing the tab mid-inspection. Dart sets this flag via
+    // `window.keprHasUnsavedWork` whenever an inspection has unsaved changes.
+    window.keprHasUnsavedWork = false;
+    window.addEventListener('beforeunload', function (event) {
+      if (!window.keprHasUnsavedWork) return undefined;
+      event.preventDefault();
+      // Browsers show their own generic wording; a non-empty value is what
+      // actually triggers the prompt.
+      event.returnValue = '';
+      return '';
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

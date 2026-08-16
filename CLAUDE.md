@@ -53,11 +53,72 @@ Do not add Supabase calls directly inside UI widgets when repository methods can
 
 ### Main UI flow
 
-- `signin_screen.dart` authenticates the inspector and starts Flat, Society, or Individual inspections.
-- `inspections_dashboard_screen.dart` loads the checklist, restores drafts, manages areas, generates PDFs, uploads reports, and performs final submission.
-- `inspection_area_screen.dart` saves or submits an area.
-- `checklist_item_screen.dart` records severity, notes, photos, services, materials, and completion state.
-- `profile_screen.dart` loads uploaded report history and opens report URLs.
+The app is a four-tab shell — **Home · Inspect · Reports · Me** (`AppTab` in
+`lib/widgets/bottom_nav.dart`). Do not reintroduce a two-tab nav: report
+history and the active inspection each need a permanent address.
+
+- `signin_screen.dart` is the authentication gate only. It renders
+  `LoginScreen` or `AppShell`. Every "back to the start" navigation in the
+  codebase targets it, so keep the class name.
+- `app_shell.dart` owns the bottom navigation, the offline banner, and the
+  lifetime of each tab body. Tab bodies live in an `IndexedStack` so switching
+  tabs does not discard a loaded checklist or scroll position.
+- `login_screen.dart` authenticates the inspector. Nothing else belongs here.
+- `home_screen.dart` (tab 1) — greeting, resume-inspection card, start CTA,
+  weekly stats, recent reports.
+- `start_inspection_flow.dart` — a three-step wizard (mode → plan → property)
+  on its own route. Property selection uses the full-screen
+  `property_picker_sheet.dart`, never inline dropdowns: inline dropdowns grew
+  and shrank the page under the user's thumb and pushed downstream fields
+  off-screen.
+- `inspect_screen.dart` (tab 2) — the active inspection. Areas expand in place;
+  each expanded area still offers Save draft and Submit section.
+- `area_manager_sheet.dart` — add / custom / modify area, and the ad-hoc sheet.
+- `checklist_item_screen.dart` records severity, notes, photos, services,
+  materials, and completion state, in three zones: verdict → evidence →
+  guidance. `No issue` is presented first and full width because it is the
+  most common answer. The action bar must stay pinned above the keyboard.
+- `reports_screen.dart` (tab 3) — submitted report history, searchable and
+  filterable by inspection type.
+- `profile_screen.dart` (tab 4) — identity, current inspection, connection
+  status, and sign out. Sign out clears the draft, so it stays behind a
+  confirm dialog.
+- `submit_result_screen.dart` — the full-screen submit experience: real step
+  progress, a success state that links to the PDF, and a failure state that
+  retries only the step that failed.
+
+### Shared UI vocabulary
+
+- Tokens: `AppRadii`, `AppSpacing`, `AppSizes` in `constants/app_styles.dart`.
+  Use only these values for radius, spacing, and minimum tap target (48px).
+- `constants/severity.dart` is the single source of truth for how a severity
+  looks *and* what evidence it requires. Never resolve severity colour or
+  requirements anywhere else, and never use raw `Colors.green` / `Colors.orange`
+  / `Colors.red.shade900` for severity.
+- Primitives: `AppCard`, `AppSectionHeader`, `AppEmptyState`, `AppStatTile`,
+  `AppProgressBar`, `AppFilterChip`, `SeverityPill`, `SeverityChoice`,
+  `SyncStatusDot`, `ConnectivityBanner`.
+- Only one `AppElevation.floating` element per screen — the thing the user is
+  meant to act on.
+
+### Submission and validation
+
+- `services/submit_validation.dart` returns a list of typed `SubmitBlocker`s
+  instead of throwing. Each blocker carries the items it applies to so the UI
+  can deep-link a "Fix" action. Add new submit rules here, not inline in a
+  widget.
+- `services/inspection_submit_service.dart` owns the submit sequence
+  (validate → build PDF → upload → persist) and reports each `SubmitStep`. It
+  accepts a `cachedReportUrl` so a failure in the final RPC retries only the
+  database write rather than regenerating and re-uploading the PDF.
+- `services/inspection_start_service.dart` owns flat/society/individual start.
+- `services/report_history_service.dart` is the only place that merges
+  `inspections` and `individual_inspections` history. Home, Reports, and
+  Profile all read through it so their counts cannot drift.
+- `services/sync_status.dart` + `services/unsaved_work_guard.dart` surface
+  whether a draft actually reached the server, and guard tab close while work
+  is unsaved. A draft saved locally but rejected by the server keeps the guard
+  armed.
 
 ### Reporting
 
@@ -205,5 +266,19 @@ After deployment, verify the production URL returns HTTP 200.
 - Flat inspections still require a profile row.
 - Camera selection prefers the rear camera.
 - Camera selection falls back safely when no rear camera exists.
+- Login is a single-purpose screen with no property or plan pickers.
+- The start flow asks mode first, then plan, then property, and states the
+  ad-hoc custom-check requirement up front.
+- Flat selection uses tappable pickers whose downstream fields stay disabled
+  until their parent is chosen.
+- Bottom navigation exposes all four destinations and reports each tap.
+- `validateForSubmit` returns one blocker per broken rule; ad-hoc plans are
+  exempt from the five-check minimum but need at least one check; low and
+  medium findings are never blocked for a missing photo; high and critical
+  need a photo and notes; critical needs a service.
+- An area is flagged critical only by a *completed* critical finding, never by
+  a checklist template's seeded severity.
+- The start flow and bottom navigation survive a 360px viewport at 200% text
+  scale.
 
 When fixing a regression, add the new invariant here only if future contributors must preserve it across unrelated work.

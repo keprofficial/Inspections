@@ -3,11 +3,10 @@ import '../constants/app_styles.dart';
 import '../constants/colors.dart';
 import '../services/inspection_session.dart';
 import '../services/supabase_repository.dart';
-import '../widgets/bottom_nav.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_logo.dart';
-import 'inspections_dashboard_screen.dart';
-import 'profile_screen.dart';
+import '../widgets/bottom_nav.dart';
+import 'signin_screen.dart';
 
 class CreateAccountPropertyDetailsScreen extends StatefulWidget {
   const CreateAccountPropertyDetailsScreen({Key? key}) : super(key: key);
@@ -131,33 +130,9 @@ class _CreateAccountPropertyDetailsScreenState
               ),
             ],
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: BottomNav(
-              activeTab: BottomNavTab.profile,
-              onTabChange: _handleBottomNav,
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  void _handleBottomNav(BottomNavTab tab) {
-    if (tab == BottomNavTab.home) {
-      Navigator.pop(context);
-      return;
-    }
-    if (tab == BottomNavTab.profile) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ProfileScreen(),
-        ),
-      );
-    }
   }
 
   Future<void> _createAccount() async {
@@ -193,7 +168,7 @@ class _CreateAccountPropertyDetailsScreenState
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => const InspectionsDashboardScreen(),
+          builder: (context) => const SignInScreen(initialTab: AppTab.inspect),
         ),
       );
     } catch (error) {

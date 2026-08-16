@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'config/supabase_config.dart';
-import 'screens/inspections_dashboard_screen.dart';
+import 'constants/colors.dart';
 import 'screens/signin_screen.dart';
 import 'services/inspection_draft_storage.dart';
-import 'services/inspection_session.dart';
+import 'services/sync_status.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,7 @@ Future<void> main() async {
     );
   }
   await InspectionDraftStorage.restoreSession();
+  await SyncStatus.instance.start();
 
   runApp(const KeprApp());
 }
@@ -32,15 +34,17 @@ class KeprApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Manrope',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFF85F5A),
+          seedColor: AppColors.coral,
           brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        scaffoldBackgroundColor: AppColors.neutral50,
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
       ),
-      home: InspectionSession.hasFreshInspectorSession &&
-              InspectionSession.isActive
-          ? const InspectionsDashboardScreen()
-          : const SignInScreen(),
+      // The gate picks login or the shell; the shell opens on Inspect when a
+      // restored inspection is active so a refresh lands where the user left.
+      home: const SignInScreen(),
     );
   }
 }

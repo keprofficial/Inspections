@@ -4,11 +4,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../constants/colors.dart';
 import '../constants/app_styles.dart';
 import '../widgets/kepr_button.dart';
-import '../widgets/bottom_nav.dart';
 import '../widgets/kepr_logo.dart';
 import 'create_account_property_details_screen.dart';
-import 'inspections_dashboard_screen.dart';
-import 'profile_screen.dart';
+import '../widgets/bottom_nav.dart';
+import 'signin_screen.dart';
 import '../services/inspection_session.dart';
 import '../services/supabase_repository.dart';
 
@@ -194,31 +193,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               ),
             ),
           ),
-          // Bottom Nav
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: BottomNav(
-              activeTab: BottomNavTab.home,
-              onTabChange: _handleBottomNav,
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  void _handleBottomNav(BottomNavTab tab) {
-    if (tab == BottomNavTab.home) return;
-    if (tab == BottomNavTab.profile) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ProfileScreen(),
-        ),
-      );
-    }
   }
 
   String? _validateInput(String input, String fieldName) {
@@ -302,11 +279,12 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       InspectionSession.flatNumber =
           saved?.block ?? _flatController.text.trim();
       if (!mounted) return;
-      Navigator.push(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (context) => const InspectionsDashboardScreen(),
+          builder: (context) => const SignInScreen(initialTab: AppTab.inspect),
         ),
+        (route) => false,
       );
     } catch (error) {
       if (!mounted) return;
