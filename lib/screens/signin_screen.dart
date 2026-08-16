@@ -6,6 +6,7 @@ import '../services/inspection_session.dart';
 import '../services/supabase_repository.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_logo.dart';
+import '../widgets/bottom_nav.dart';
 import 'inspections_dashboard_screen.dart';
 import 'profile_screen.dart';
 import 'property_details_screen.dart';
@@ -44,8 +45,9 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _showSocietyOptions = false;
   bool _showBlockOptions = false;
   bool _showFlatOptions = false;
-  _InspectionMode _inspectionMode = _InspectionMode.flat;
-  String _inspectionPlan = 'free';
+  _InspectionMode? _inspectionMode;
+  String? _inspectionPlan;
+  bool _showPropertyFields = false;
   int _societyLoadToken = 0;
   int _blockLoadToken = 0;
   int _flatLoadToken = 0;
@@ -69,8 +71,11 @@ class _SignInScreenState extends State<SignInScreen> {
         authToken: InspectionSession.authToken,
       );
       final savedPlan = InspectionSession.inspectionPlan;
-      _inspectionPlan =
-          savedPlan == 'paid' || savedPlan == 'adhoc' ? savedPlan! : 'free';
+      _inspectionPlan = savedPlan == 'free' ||
+              savedPlan == 'paid' ||
+              savedPlan == 'adhoc'
+          ? savedPlan
+          : null;
     } else if ((InspectionSession.authToken ?? '').isNotEmpty) {
       InspectionSession.clearInspectorAuth();
       InspectionDraftStorage.saveSession();
@@ -124,6 +129,9 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_authenticatedInspector != null) {
+      return _buildAuthenticatedDashboard(context);
+    }
     return Scaffold(
       backgroundColor: AppColors.neutral50,
       body: SafeArea(
@@ -287,6 +295,302 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
+  Widget _buildAuthenticatedDashboard(BuildContext context) {
+    final inspector = _authenticatedInspector!;
+    final canContinue = _inspectionMode != null && _inspectionPlan != null;
+    return Scaffold(
+      backgroundColor: AppColors.neutral50,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        backgroundColor: AppColors.coral,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Row(
+          children: [
+            const KeprLogo(size: 38),
+            const SizedBox(width: 10),
+            const Text(
+              'Kepr',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: _openProfile,
+            tooltip: 'Profile',
+            icon: CircleAvatar(
+              radius: 17,
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.coral,
+              child: Text(
+                _inspectorInitials(inspector.displayName),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 22, 16, 112),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 620),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Good ${_dayPeriod()}, ${inspector.displayName}',
+                      style: AppStyles.headlineMd.copyWith(
+                        color: AppColors.navy,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'What would you like to inspect today?',
+                      style: AppStyles.bodyMd.copyWith(
+                        color: AppColors.neutral600,
+                      ),
+                    ),
+                    if (InspectionSession.isActive) ...[
+                      const SizedBox(height: 20),
+                      _buildResumeInspectionCard(),
+                    ],
+                    const SizedBox(height: 24),
+                    _buildDashboardSectionTitle(
+                      'Choose property',
+                      'Step 1 of 2',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInspectionModeSelector(),
+                    if (_inspectionMode != null) ...[
+                      const SizedBox(height: 24),
+                      _buildDashboardSectionTitle(
+                        'Choose inspection',
+                        'Step 2 of 2',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildInspectionPlanSelector(),
+                    ],
+                    if (canContinue && !_showPropertyFields) ...[
+                      const SizedBox(height: 20),
+                      KeprButton(
+                        label: 'Continue to property details',
+                        showArrow: true,
+                        onPressed: () =>
+                            setState(() => _showPropertyFields = true),
+                      ),
+                    ],
+                    if (_showPropertyFields && canContinue) ...[
+                      const SizedBox(height: 26),
+                      _buildPropertyFieldsCard(),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: BottomNav(
+              activeTab: BottomNavTab.home,
+              onTabChange: (tab) {
+                if (tab == BottomNavTab.profile) _openProfile();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardSectionTitle(String title, String step) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: AppStyles.headlineMd.copyWith(
+              color: AppColors.navy,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Text(
+          step,
+          style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResumeInspectionCard() {
+    final type = InspectionSession.inspectionMode ?? 'flat';
+    final plan = InspectionSession.inspectionPlan ?? 'paid';
+    final property = InspectionSession.societyName ??
+        InspectionSession.flatNumber ??
+        'Active property';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.neutral200),
+        boxShadow: AppColors.shadowSm,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.coral.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.restore, color: AppColors.coral),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  property,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppStyles.labelMd.copyWith(
+                    color: AppColors.navy,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${_displayMode(type)} · ${_displayPlan(plan)} inspection',
+                  style: AppStyles.labelSm.copyWith(
+                    color: AppColors.neutral600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const InspectionsDashboardScreen(),
+              ),
+            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.coral),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPropertyFieldsCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.neutral200),
+        boxShadow: AppColors.shadowSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.home_work_outlined, color: AppColors.coral),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${_selectedModeLabel()} details',
+                  style: AppStyles.headlineMd.copyWith(
+                    color: AppColors.navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _showPropertyFields = false),
+                child: const Text('Change'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (_inspectionMode == _InspectionMode.flat)
+            ..._buildFlatInspectionFields()
+          else if (_inspectionMode == _InspectionMode.society)
+            ..._buildSocietyInspectionFields()
+          else
+            ..._buildIndividualInspectionFields(),
+          const SizedBox(height: 24),
+          KeprButton(
+            label: _inspectionMode == _InspectionMode.flat
+                ? 'Start Flat Inspection'
+                : _inspectionMode == _InspectionMode.society
+                    ? 'Start Society Inspection'
+                    : 'Start Individual Inspection',
+            isLoading: _isSigningIn,
+            enabled: _canSignIn && !_isSigningIn,
+            onPressed: _canSignIn && !_isSigningIn ? _signIn : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _selectedModeLabel() {
+    switch (_inspectionMode) {
+      case _InspectionMode.flat:
+        return 'Flat property';
+      case _InspectionMode.society:
+        return 'Society';
+      case _InspectionMode.individual:
+        return 'Individual home';
+      case null:
+        return 'Property';
+    }
+  }
+
+  String _displayMode(String value) {
+    if (value == 'society') return 'Society';
+    if (value == 'individual') return 'Individual';
+    return 'Flat';
+  }
+
+  String _displayPlan(String value) {
+    if (value == 'adhoc') return 'Ad-hoc';
+    return '${value[0].toUpperCase()}${value.substring(1)}';
+  }
+
+  String _inspectorInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return 'I';
+    return parts.take(2).map((part) => part[0].toUpperCase()).join();
+  }
+
+  String _dayPeriod() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'morning';
+    if (hour < 17) return 'afternoon';
+    return 'evening';
+  }
+
   Widget _buildLabel(String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -325,8 +629,8 @@ class _SignInScreenState extends State<SignInScreen> {
               child: _buildModeCard(
                 mode: _InspectionMode.flat,
                 icon: Icons.apartment_outlined,
-                title: 'Flat',
-                subtitle: 'Society, block, flat',
+                title: 'Flat Property',
+                subtitle: 'Society, block and flat',
               ),
             ),
             SizedBox(width: compact ? 6 : 8),
@@ -335,7 +639,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 mode: _InspectionMode.society,
                 icon: Icons.business_outlined,
                 title: 'Society',
-                subtitle: 'Common areas',
+                subtitle: 'Common areas and amenities',
               ),
             ),
             SizedBox(width: compact ? 6 : 8),
@@ -343,8 +647,8 @@ class _SignInScreenState extends State<SignInScreen> {
               child: _buildModeCard(
                 mode: _InspectionMode.individual,
                 icon: Icons.person_pin_circle_outlined,
-                title: 'Individual',
-                subtitle: 'Owner property',
+                title: 'Individual Home',
+                subtitle: 'Independent owner property',
               ),
             ),
           ];
@@ -367,6 +671,8 @@ class _SignInScreenState extends State<SignInScreen> {
         borderRadius: BorderRadius.circular(8),
         onTap: () => setState(() {
           _inspectionMode = mode;
+          _inspectionPlan = null;
+          _showPropertyFields = false;
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -509,8 +815,8 @@ class _SignInScreenState extends State<SignInScreen> {
           Expanded(
             child: _buildPlanCard(
               plan: 'adhoc',
-              title: 'Adhoc',
-              subtitle: 'Custom checks',
+              title: 'Ad-hoc',
+              subtitle: 'Create custom checks',
               icon: Icons.playlist_add_check_outlined,
             ),
           ),
@@ -519,7 +825,7 @@ class _SignInScreenState extends State<SignInScreen> {
             child: _buildPlanCard(
               plan: 'paid',
               title: 'Paid',
-              subtitle: 'Full checklist',
+              subtitle: 'Complete checklist',
               icon: Icons.workspace_premium_outlined,
             ),
           ),
@@ -537,7 +843,10 @@ class _SignInScreenState extends State<SignInScreen> {
     final selected = _inspectionPlan == plan;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => setState(() => _inspectionPlan = plan),
+      onTap: () => setState(() {
+        _inspectionPlan = plan;
+        _showPropertyFields = false;
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         constraints: const BoxConstraints(minHeight: 70),
