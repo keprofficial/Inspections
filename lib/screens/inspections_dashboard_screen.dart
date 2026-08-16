@@ -300,20 +300,24 @@ class _InspectionsDashboardScreenState
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final updatedArea = await Navigator.push<InspectionArea>(
+      final result = await Navigator.push<InspectionAreaScreenResult>(
         context,
         MaterialPageRoute(
           builder: (context) => InspectionAreaScreen(area: area),
         ),
       );
       await InspectionDraftStorage.setActiveInspectionPage();
-      if (updatedArea == null || !mounted) return;
+      if (result == null || !mounted) return;
+      final updatedArea = result.area;
       setState(() {
         final index =
             areas.indexWhere((candidate) => candidate.id == updatedArea.id);
         if (index != -1) areas[index] = updatedArea;
       });
       await _saveDraft();
+      if (result.finalizeIndividualReport && mounted) {
+        await _finalSubmit();
+      }
     });
   }
 
@@ -827,20 +831,24 @@ class _InspectionsDashboardScreenState
           onTap: () async {
             await _saveDraft();
             await InspectionDraftStorage.setActiveAreaPage(area.id);
-            final updatedArea = await Navigator.push<InspectionArea>(
+            final result = await Navigator.push<InspectionAreaScreenResult>(
               context,
               MaterialPageRoute(
                 builder: (context) => InspectionAreaScreen(area: area),
               ),
             );
             await InspectionDraftStorage.setActiveInspectionPage();
-            if (updatedArea == null) return;
+            if (result == null || !mounted) return;
+            final updatedArea = result.area;
             setState(() {
               final index =
                   areas.indexWhere((candidate) => candidate.id == area.id);
               if (index != -1) areas[index] = updatedArea;
             });
             await _saveDraft();
+            if (result.finalizeIndividualReport && mounted) {
+              await _finalSubmit();
+            }
           },
           child: Padding(
             padding: const EdgeInsets.all(16),

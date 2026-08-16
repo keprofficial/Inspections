@@ -1174,24 +1174,35 @@ class SupabaseRepository {
     }
 
     try {
-      var query = client.from('individual_inspections').select(
+      final query = client.from('individual_inspections').select(
             'id,inspection_ref,inspection_code,inspection_type,inspector_id,inspector_name,inspector_mobile,property_name,property_owner_name,property_owner_mobile,report_pdf_url,submitted_at',
           );
       final id = inspectorId?.trim();
       final mobile = inspectorMobile?.trim();
       final name = inspectorName?.trim();
-      if (id != null && id.isNotEmpty) {
-        query = query.eq('inspector_id', id);
-      } else if (mobile != null && mobile.isNotEmpty) {
-        query = query.eq('inspector_mobile', mobile);
-      } else if (name != null && name.isNotEmpty) {
-        query = query.eq('inspector_name', name);
-      }
+      final hasInspectorIdentity = (id != null && id.isNotEmpty) ||
+          (mobile != null && mobile.isNotEmpty) ||
+          (name != null && name.isNotEmpty);
+      if (!hasInspectorIdentity) return reports.take(limit).toList();
       final rows = await query
           .order('submitted_at', ascending: false, nullsFirst: false)
-          .limit(limit);
+          .limit(limit * 4);
       for (final row in (rows as List<dynamic>).whereType<Map>()) {
         final data = row.map((key, value) => MapEntry(key.toString(), value));
+        final rowId = data['inspector_id']?.toString().trim();
+        final rowMobile = data['inspector_mobile']?.toString().trim();
+        final rowName = data['inspector_name']?.toString().trim();
+        final matchesInspector =
+            (id != null && id.isNotEmpty && rowId != null && rowId == id) ||
+                (mobile != null &&
+                    mobile.isNotEmpty &&
+                    rowMobile != null &&
+                    _sameMobile(rowMobile, mobile)) ||
+                (name != null &&
+                    name.isNotEmpty &&
+                    rowName != null &&
+                    _sameInspectorName(rowName, name));
+        if (!matchesInspector) continue;
         final url = data['report_pdf_url']?.toString() ?? '';
         if (url.isEmpty) continue;
         reports.add(
@@ -1229,6 +1240,16 @@ class SupabaseRepository {
     String normalize(String value) =>
         value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     return normalize(left) == normalize(right);
+  }
+
+  bool _sameMobile(String left, String right) {
+    String normalize(String value) => value.replaceAll(RegExp(r'\D'), '');
+    final normalizedLeft = normalize(left);
+    final normalizedRight = normalize(right);
+    if (normalizedLeft.isEmpty || normalizedRight.isEmpty) return false;
+    return normalizedLeft == normalizedRight ||
+        normalizedLeft.endsWith(normalizedRight) ||
+        normalizedRight.endsWith(normalizedLeft);
   }
 
   Future<SavedProperty?> _findLivePropertyByCode(

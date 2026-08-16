@@ -8,6 +8,16 @@ import '../services/supabase_repository.dart';
 import '../widgets/kepr_button.dart';
 import 'checklist_item_screen.dart';
 
+class InspectionAreaScreenResult {
+  final InspectionArea area;
+  final bool finalizeIndividualReport;
+
+  const InspectionAreaScreenResult({
+    required this.area,
+    this.finalizeIndividualReport = false,
+  });
+}
+
 class InspectionAreaScreen extends StatefulWidget {
   final InspectionArea area;
 
@@ -162,7 +172,13 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Section submitted!')),
       );
-      Navigator.pop(context, currentArea);
+      Navigator.pop(
+        context,
+        InspectionAreaScreenResult(
+          area: currentArea,
+          finalizeIndividualReport: InspectionSession.isIndividualInspection,
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +192,10 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   void _closeWithCurrentArea() {
     _persistCurrentArea(_currentArea());
     InspectionDraftStorage.setActiveInspectionPage();
-    Navigator.pop(context, _currentArea());
+    Navigator.pop(
+      context,
+      InspectionAreaScreenResult(area: _currentArea()),
+    );
   }
 
   Future<void> _saveDraft() async {
