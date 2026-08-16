@@ -111,6 +111,13 @@ class InspectionSession {
     _lastLoginAt = null;
   }
 
-  static bool get isActive =>
-      _profileId != null && _propertyId != null && _inspectionId != null;
+  static bool get isActive {
+    final hasInspectionIdentity = _propertyId != null && _inspectionId != null;
+    if (!hasInspectionIdentity) return false;
+
+    // Individual inspections use a generated property/inspection reference and
+    // do not have a profiles row. Flat and society inspections still require
+    // their selected live profile/property context.
+    return isIndividualInspection || _profileId != null;
+  }
 }
