@@ -11,19 +11,20 @@ class CapturedInspectionPhoto {
   final Uint8List bytes;
   final String fileName;
 
-  const CapturedInspectionPhoto({
-    required this.bytes,
-    required this.fileName,
-  });
+  const CapturedInspectionPhoto({required this.bytes, required this.fileName});
+}
+
+int preferredInspectionCameraIndex(List<CameraDescription> cameras) {
+  final backCameraIndex = cameras.indexWhere(
+    (camera) => camera.lensDirection == CameraLensDirection.back,
+  );
+  return backCameraIndex == -1 ? 0 : backCameraIndex;
 }
 
 class CameraCaptureScreen extends StatefulWidget {
   final String itemId;
 
-  const CameraCaptureScreen({
-    Key? key,
-    required this.itemId,
-  }) : super(key: key);
+  const CameraCaptureScreen({Key? key, required this.itemId}) : super(key: key);
 
   @override
   State<CameraCaptureScreen> createState() => _CameraCaptureScreenState();
@@ -49,7 +50,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
     super.dispose();
   }
 
-  Future<void> _initializeCamera([int cameraIndex = 0]) async {
+  Future<void> _initializeCamera([int? cameraIndex]) async {
     setState(() {
       _isInitializing = true;
       _error = null;
@@ -61,7 +62,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
         throw CameraException('no_camera', 'No camera found on this device.');
       }
 
-      _cameraIndex = cameraIndex.clamp(0, _cameras.length - 1);
+      _cameraIndex = cameraIndex == null
+          ? preferredInspectionCameraIndex(_cameras)
+          : cameraIndex.clamp(0, _cameras.length - 1);
       final oldController = _controller;
       final controller = CameraController(
         _cameras[_cameraIndex],
@@ -122,7 +125,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final canPreview = controller != null &&
+    final canPreview =
+        controller != null &&
         controller.value.isInitialized &&
         !_isInitializing;
 
@@ -152,10 +156,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                 child: _error != null
                     ? _buildErrorState()
                     : canPreview
-                        ? _buildPreview(controller)
-                        : const CircularProgressIndicator(
-                            color: AppColors.coral,
-                          ),
+                    ? _buildPreview(controller)
+                    : const CircularProgressIndicator(color: AppColors.coral),
               ),
             ),
             Container(
