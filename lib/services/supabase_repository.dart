@@ -1082,15 +1082,14 @@ class SupabaseRepository {
     }
 
     try {
-      final response = await client
-          .from('individual_inspections')
-          .insert({
+      final response = await client.rpc(
+        'inspection_app_submit_individual_inspection',
+        params: {
+          'p_payload': {
             'inspection_ref': inspectionRef,
             'inspection_code': inspectionCode,
             'inspection_type': inspectionType,
-            'inspector_id': inspectorId,
-            'inspector_name': inspectorName,
-            'inspector_mobile': inspectorMobile,
+            'session_token': InspectionSession.authToken,
             'property_name': propertyName,
             'property_owner_name': ownerName,
             'property_owner_mobile': ownerMobile,
@@ -1100,14 +1099,15 @@ class SupabaseRepository {
             'critical_issue_count': criticalIssues.length,
             'checklist': areas.map((area) => area.toJson()).toList(),
             'critical_issues': criticalIssues,
-          })
-          .select('id')
-          .maybeSingle();
-      return response?['id']?.toString();
+          },
+        },
+      );
+      return response?.toString();
     } catch (error) {
       throw Exception(
-        'Could not save individual inspection. Run '
-        'supabase_individual_inspections.sql in Supabase SQL Editor first. '
+        'Could not save individual inspection. Run the latest '
+        'supabase_individual_inspections.sql in Supabase SQL Editor, then '
+        'sign in again and retry Submit Section. '
         '$error',
       );
     }
