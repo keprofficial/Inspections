@@ -139,61 +139,55 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
           },
         ),
       ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProgressCard(),
-                  const SizedBox(height: 20),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      return _buildItemCard(items[index], index);
-                    },
-                  ),
-                  const SizedBox(height: 120),
-                ],
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildProgressCard(),
+              const SizedBox(height: 20),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  return _buildItemCard(items[index], index);
+                },
               ),
-            ),
+              const SizedBox(height: 16),
+            ],
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: AppColors.neutral200)),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: KeprButton(
-                      label: 'SAVE DRAFT',
-                      variant: ButtonVariant.secondary,
-                      onPressed: _saveDraft,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: KeprButton(
-                      label: 'SUBMIT SECTION',
-                      isLoading: _isSubmitting,
-                      onPressed: _submitSection,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppColors.neutral200)),
           ),
-        ],
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: KeprButton(
+                  label: 'SAVE DRAFT',
+                  variant: ButtonVariant.secondary,
+                  onPressed: _saveDraft,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: KeprButton(
+                  label: 'SUBMIT SECTION',
+                  isLoading: _isSubmitting,
+                  onPressed: _submitSection,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
