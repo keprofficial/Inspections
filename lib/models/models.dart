@@ -88,6 +88,7 @@ class InspectionItem {
   final String equipmentNeeded;
   final String? severity; // 'low', 'medium', 'high', 'critical'
   final bool completed;
+  final bool includedInReport;
   final String? notes;
   final List<String> photoPaths;
   final List<String> photoEvidenceBase64;
@@ -106,6 +107,7 @@ class InspectionItem {
     this.equipmentNeeded = '',
     this.severity,
     required this.completed,
+    this.includedInReport = true,
     this.notes,
     this.photoPaths = const [],
     this.photoEvidenceBase64 = const [],
@@ -126,6 +128,7 @@ class InspectionItem {
       equipmentNeeded: json['equipmentNeeded']?.toString() ?? '',
       severity: json['severity']?.toString(),
       completed: json['completed'] == true,
+      includedInReport: json['includedInReport'] != false,
       notes: json['notes']?.toString(),
       photoPaths: _stringListFromJson(json['photoPaths']),
       photoEvidenceBase64: _stringListFromJson(json['photoEvidenceBase64']),
@@ -148,6 +151,7 @@ class InspectionItem {
     String? equipmentNeeded,
     String? severity,
     bool? completed,
+    bool? includedInReport,
     String? notes,
     List<String>? photoPaths,
     List<String>? photoEvidenceBase64,
@@ -166,6 +170,7 @@ class InspectionItem {
       equipmentNeeded: equipmentNeeded ?? this.equipmentNeeded,
       severity: severity ?? this.severity,
       completed: completed ?? this.completed,
+      includedInReport: includedInReport ?? this.includedInReport,
       notes: notes ?? this.notes,
       photoPaths: photoPaths ?? this.photoPaths,
       photoEvidenceBase64: photoEvidenceBase64 ?? this.photoEvidenceBase64,
@@ -187,6 +192,7 @@ class InspectionItem {
       'equipmentNeeded': equipmentNeeded,
       'severity': severity,
       'completed': completed,
+      'includedInReport': includedInReport,
       'notes': notes,
       'photoPaths': photoPaths,
       'photoEvidenceBase64': photoEvidenceBase64,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../constants/app_styles.dart';
@@ -12,6 +13,34 @@ import '../widgets/badge.dart';
 import '../widgets/kepr_button.dart';
 import 'camera_capture_screen.dart';
 import 'image_annotation_screen.dart';
+
+// Top-level so compute() can spawn it in a background isolate.
+Uint8List _compressPhotoIsolate(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+
+  var width = decoded.width > 960 ? 960 : decoded.width;
+  var quality = 62;
+  Uint8List encoded = Uint8List.fromList(
+    img.encodeJpg(
+      decoded.width > width ? img.copyResize(decoded, width: width) : decoded,
+      quality: quality,
+    ),
+  );
+
+  while (encoded.length > 50 * 1024 && (quality > 34 || width > 560)) {
+    if (quality > 34) {
+      quality -= 8;
+    } else {
+      width = (width * 0.82).round().clamp(420, width).toInt();
+    }
+    final resized =
+        decoded.width > width ? img.copyResize(decoded, width: width) : decoded;
+    encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+  }
+
+  return encoded;
+}
 
 class ChecklistItemScreen extends StatefulWidget {
   final InspectionItem item;
@@ -41,6 +70,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   bool _isLoadingServices = false;
   bool _isCapturingPhoto = false;
   bool _showServiceOptions = false;
+  late bool includedInReport;
   int _serviceSearchToken = 0;
   final int maxChars = 500;
 
@@ -48,6 +78,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   void initState() {
     super.initState();
     selectedSeverity = (widget.item.severity ?? 'medium').toLowerCase();
+    includedInReport = widget.item.includedInReport;
     notesController = TextEditingController(text: widget.item.notes);
     pageScrollController = ScrollController();
     notesFocusNode = FocusNode()..addListener(_handleNotesFocus);
@@ -149,18 +180,22 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
   }
 
   bool get _requiresPhotoEvidence =>
-      selectedSeverity == 'high' || selectedSeverity == 'critical';
+      includedInReport &&
+      (selectedSeverity == 'high' || selectedSeverity == 'critical');
 
   bool get _hasMissingRequiredPhotos =>
       _requiresPhotoEvidence && photoNames.isEmpty;
 
-  bool get _canMarkCompleted => !_hasMissingRequiredPhotos;
+  bool get _canMarkCompleted => !includedInReport || !_hasMissingRequiredPhotos;
 
   bool get _isCriticalWithoutService =>
-      selectedSeverity == 'critical' && selectedServices.isEmpty;
+      includedInReport &&
+      selectedSeverity == 'critical' &&
+      selectedServices.isEmpty;
 
   bool get _requiresTechnicianNotes =>
-      selectedSeverity == 'high' || selectedSeverity == 'critical';
+      includedInReport &&
+      (selectedSeverity == 'high' || selectedSeverity == 'critical');
 
   bool get _isMissingRequiredNotes =>
       _requiresTechnicianNotes && notesController.text.trim().isEmpty;
@@ -320,7 +355,8 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
         return;
       }
 
-      final compressedBytes = _compressPhoto(annotatedBytes);
+      final compressedBytes =
+          await compute(_compressPhotoIsolate, annotatedBytes);
       final localEvidence = base64Encode(compressedBytes);
       String? photoId;
       Object? uploadError;
@@ -366,34 +402,6 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
     } finally {
       if (mounted) setState(() => _isCapturingPhoto = false);
     }
-  }
-
-  Uint8List _compressPhoto(Uint8List bytes) {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-
-    var width = decoded.width > 960 ? 960 : decoded.width;
-    var quality = 62;
-    Uint8List encoded = Uint8List.fromList(
-      img.encodeJpg(
-        decoded.width > width ? img.copyResize(decoded, width: width) : decoded,
-        quality: quality,
-      ),
-    );
-
-    while (encoded.length > 50 * 1024 && (quality > 34 || width > 560)) {
-      if (quality > 34) {
-        quality -= 8;
-      } else {
-        width = (width * 0.82).round().clamp(420, width).toInt();
-      }
-      final resized = decoded.width > width
-          ? img.copyResize(decoded, width: width)
-          : decoded;
-      encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-    }
-
-    return encoded;
   }
 
   String _photoLabel(String value) {
@@ -472,6 +480,27 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.neutral200),
+                    ),
+                    child: SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: AppColors.coral,
+                      value: includedInReport,
+                      onChanged: (value) =>
+                          setState(() => includedInReport = value),
+                      title: const Text('Include in final report'),
+                      subtitle: Text(includedInReport
+                          ? 'This check will appear in the report.'
+                          : 'Not applicable to this home. It will be excluded.'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: KeprButton(
@@ -632,7 +661,9 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: KeprButton(
-                        label: 'Mark Completed',
+                        label: includedInReport
+                            ? 'Mark Completed'
+                            : 'Save as Not Applicable',
                         icon: const Icon(Icons.check, color: Colors.white),
                         enabled: _canMarkCompleted,
                         onPressed: () {
@@ -652,6 +683,7 @@ class _ChecklistItemScreenState extends State<ChecklistItemScreen> {
                             context,
                             widget.item.copyWith(
                               completed: true,
+                              includedInReport: includedInReport,
                               severity: selectedSeverity,
                               notes: notesController.text,
                               photoPaths: photoNames,

@@ -36,6 +36,7 @@ class ReportPdfService {
     final criticalRows = _itemsWithArea(areas)
         .where(
           (row) =>
+              row.item.includedInReport &&
               row.item.completed &&
               (row.item.severity ?? '').toLowerCase() == 'critical',
         )
@@ -48,9 +49,11 @@ class ReportPdfService {
   }
 
   static Future<Uint8List> buildCompleteReport(List<InspectionArea> areas) {
+    final allRows = _itemsWithArea(areas).toList();
     return _buildReport(
       title: _completeReportTitle(),
-      rows: _itemsWithArea(areas).toList(),
+      rows: allRows.where((row) => row.item.includedInReport).toList(),
+      excludedCount: allRows.where((row) => !row.item.includedInReport).length,
       includeAllChecks: true,
     );
   }
@@ -71,6 +74,7 @@ class ReportPdfService {
     required String title,
     required List<_ReportRow> rows,
     required bool includeAllChecks,
+    int excludedCount = 0,
   }) async {
     final document = pw.Document();
     final completed = rows.where((row) => row.item.completed).length;
@@ -78,19 +82,66 @@ class ReportPdfService {
     final photoImages = await _loadPhotoImages(rows);
 
     document.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(28, 24, 28, 24),
+        build: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _buildHeader(
+              logo: logo,
+              title: title,
+              completed: completed,
+              total: rows.length,
+            ),
+            pw.SizedBox(height: 16),
+            _buildPropertySummary(completed: completed, total: rows.length),
+            pw.SizedBox(height: 20),
+            pw.Text(
+              'INSPECTION AT A GLANCE',
+              style: pw.TextStyle(
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#18181B'),
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            _buildSeverityOverview(rows, excludedCount),
+            pw.Spacer(),
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#F7F7F8'),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Text(
+                'Detailed inspection findings begin on the next page.',
+                textAlign: pw.TextAlign.center,
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            _buildFooter(context),
+          ],
+        ),
+      ),
+    );
+
+    document.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(28, 24, 28, 24),
         footer: (context) => _buildFooter(context),
         build: (context) => [
-          _buildHeader(
-            logo: logo,
-            title: title,
-            completed: completed,
-            total: rows.length,
+          pw.Text(
+            'DETAILED INSPECTION FINDINGS',
+            style: pw.TextStyle(
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#18181B'),
+            ),
           ),
-          pw.SizedBox(height: 12),
-          _buildPropertySummary(completed: completed, total: rows.length),
           pw.SizedBox(height: 14),
           if (rows.isEmpty)
             pw.Text(
@@ -107,6 +158,57 @@ class ReportPdfService {
     return document.save();
   }
 
+  static pw.Widget _buildSeverityOverview(
+    List<_ReportRow> rows,
+    int excludedCount,
+  ) {
+    int count(String severity) => rows
+        .where((row) =>
+            row.item.completed &&
+            (row.item.severity ?? '').toLowerCase() == severity)
+        .length;
+
+    final metrics = <(String, int, String)>[
+      ('Critical', count('critical'), '#991B1B'),
+      ('High', count('high'), '#EF4444'),
+      ('Medium', count('medium'), '#F59E0B'),
+      ('Low', count('low'), '#34C759'),
+      ('No Issues', count('no_issue'), '#0F766E'),
+      ('Excluded', excludedCount, '#71717A'),
+    ];
+
+    return pw.Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: metrics.map((metric) {
+        return pw.Container(
+          width: 164,
+          height: 82,
+          padding: const pw.EdgeInsets.all(12),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex(metric.$3),
+            borderRadius: pw.BorderRadius.circular(8),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(metric.$1,
+                  style:
+                      const pw.TextStyle(color: PdfColors.white, fontSize: 10)),
+              pw.Text('${metric.$2}',
+                  style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 26,
+                    fontWeight: pw.FontWeight.bold,
+                  )),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   static Future<pw.MemoryImage?> _loadLogo() async {
     try {
       final bytes =
@@ -120,22 +222,38 @@ class ReportPdfService {
   static Future<Map<String, List<pw.MemoryImage>>> _loadPhotoImages(
     List<_ReportRow> rows,
   ) async {
+    // Fetch all remote photos for all rows in parallel, then assemble.
+    Future<pw.MemoryImage?> _fetchOne(String photoUrl) async {
+      final uri = Uri.tryParse(photoUrl);
+      if (uri == null || !uri.hasScheme || !uri.scheme.startsWith('http')) {
+        return null;
+      }
+      try {
+        final data = await NetworkAssetBundle(uri).load('');
+        return pw.MemoryImage(data.buffer.asUint8List());
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final allFetchFutures = <String, Future<List<pw.MemoryImage?>>>{};
+    for (final row in rows) {
+      final currentPhotoPaths = _currentPhotoPaths(row.item);
+      allFetchFutures[row.item.id] = Future.wait(
+        currentPhotoPaths.take(4).map(_fetchOne),
+      );
+    }
+    final fetchResults = await Future.wait(
+      allFetchFutures.entries.map((e) async => MapEntry(e.key, await e.value)),
+    );
+    final remoteByItemId = Map.fromEntries(fetchResults);
+
     final images = <String, List<pw.MemoryImage>>{};
     for (final row in rows) {
-      final loaded = <pw.MemoryImage>[];
+      final loaded =
+          remoteByItemId[row.item.id]?.whereType<pw.MemoryImage>().toList() ??
+              [];
       final currentPhotoPaths = _currentPhotoPaths(row.item);
-      for (final photoUrl in currentPhotoPaths.take(4)) {
-        final uri = Uri.tryParse(photoUrl);
-        if (uri == null || !uri.hasScheme || !uri.scheme.startsWith('http')) {
-          continue;
-        }
-        try {
-          final data = await NetworkAssetBundle(uri).load('');
-          loaded.add(pw.MemoryImage(data.buffer.asUint8List()));
-        } catch (_) {
-          // If a photo cannot be fetched, skip it so PDF generation still works.
-        }
-      }
       if (InspectionSession.inspectionId == null ||
           currentPhotoPaths.isNotEmpty) {
         for (final base64Image

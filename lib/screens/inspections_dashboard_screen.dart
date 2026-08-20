@@ -243,9 +243,12 @@ class _InspectionsDashboardScreenState
     final inspectionType = InspectionSession.inspectionMode ?? 'flat';
     final inspectionPlan = InspectionSession.inspectionPlan ?? 'paid';
     if (inspectionPlan == 'adhoc') {
-      final serverAreas =
-          await SupabaseRepository.instance.loadInspectionDraft();
-      final localAreas = await InspectionDraftStorage.loadAreas();
+      final draftPair = await (
+        SupabaseRepository.instance.loadInspectionDraft(),
+        InspectionDraftStorage.loadAreas(),
+      ).wait;
+      final serverAreas = draftPair.$1;
+      final localAreas = draftPair.$2;
       final loadedAreas = serverAreas ?? localAreas ?? <InspectionArea>[];
       final existingDraft = loadedAreas
           .map((area) {
@@ -298,8 +301,12 @@ class _InspectionsDashboardScreenState
       inspectionPlan: inspectionPlan,
       defaultsOnly: true,
     );
-    final serverAreas = await SupabaseRepository.instance.loadInspectionDraft();
-    final localAreas = await InspectionDraftStorage.loadAreas();
+    final draftPair2 = await (
+      SupabaseRepository.instance.loadInspectionDraft(),
+      InspectionDraftStorage.loadAreas(),
+    ).wait;
+    final serverAreas = draftPair2.$1;
+    final localAreas = draftPair2.$2;
     final existingDraft = serverAreas ?? localAreas;
 
     if (remoteTemplates.isEmpty) {
@@ -1124,11 +1131,14 @@ class _InspectionsDashboardScreenState
   Widget _buildAreaCard(InspectionArea area) {
     final completedCount = area.items.where((item) => item.completed).length;
     final pendingCount = area.items.length - completedCount;
+    final excludedCount =
+        area.items.where((item) => !item.includedInReport).length;
     final progress = area.items.isEmpty
         ? 0
         : ((completedCount / area.items.length) * 100).round();
-    final isUrgent = area.items
-        .any((item) => (item.severity ?? '').toLowerCase() == 'critical');
+    final isUrgent = area.items.any((item) =>
+        item.includedInReport &&
+        (item.severity ?? '').toLowerCase() == 'critical');
     final accent = _modeAccentColor;
     final leftBarColor = isUrgent ? AppColors.error : accent;
 
@@ -1203,7 +1213,9 @@ class _InspectionsDashboardScreenState
                               Text(
                                 isUrgent
                                     ? 'Critical checks included'
-                                    : '$pendingCount pending · ${area.items.length} checks',
+                                    : progress == 100
+                                        ? 'Submitted · Tap Edit to make corrections'
+                                        : '$pendingCount pending · ${area.items.length} checks${excludedCount > 0 ? ' · $excludedCount excluded' : ''}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: isUrgent
@@ -1236,10 +1248,23 @@ class _InspectionsDashboardScreenState
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             if (progress == 100)
-                              const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppColors.success,
-                                size: 22,
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.coral.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'EDIT',
+                                  style: TextStyle(
+                                    color: AppColors.coral,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               )
                             else
                               Text(

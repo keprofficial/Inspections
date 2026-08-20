@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +9,31 @@ import '../data/inspection_checklist_data.dart';
 import '../models/models.dart';
 import 'inspection_draft_storage.dart';
 import 'inspection_session.dart';
+
+// Top-level so compute() can run it in a background isolate.
+Uint8List _compressImageIsolate(Uint8List bytes) {
+  if (bytes.length <= 50 * 1024) return bytes;
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+
+  var width = decoded.width > 960 ? 960 : decoded.width;
+  var quality = 60;
+  Uint8List encoded = bytes;
+
+  while (true) {
+    final resized =
+        decoded.width > width ? img.copyResize(decoded, width: width) : decoded;
+    encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+    if (encoded.length <= 50 * 1024) return encoded;
+    if (quality > 32) {
+      quality -= 7;
+    } else if (width > 480) {
+      width = (width * 0.82).round().clamp(420, width).toInt();
+    } else {
+      return encoded;
+    }
+  }
+}
 
 class SavedProperty {
   final String profileId;
@@ -634,7 +660,11 @@ class SupabaseRepository {
           'how_to': item.howTo,
           'equipment_needed': item.equipmentNeeded,
           'severity': item.severity,
-          'status': item.completed ? 'completed' : 'pending',
+          'status': !item.includedInReport
+              ? 'excluded'
+              : item.completed
+                  ? 'completed'
+                  : 'pending',
           'notes': item.notes,
           'photo_names': item.photoPaths,
           'service_code': item.serviceCode,
@@ -668,7 +698,8 @@ class SupabaseRepository {
   }) async {
     final client = _client;
     if (client == null) return fileName;
-    final uploadBytes = _compressImageForUpload(Uint8List.fromList(bytes));
+    final uploadBytes =
+        await compute(_compressImageIsolate, Uint8List.fromList(bytes));
     final safeAreaName = _safePathPart(areaName ?? 'inspection-area');
     final safeFileName =
         '${DateTime.now().microsecondsSinceEpoch}_${_safePathPart(fileName)}';
@@ -688,10 +719,10 @@ class SupabaseRepository {
     Object? lastError;
     bool uploaded = false;
 
-    // Up to 3 attempts on primary SDK path with backoff before falling back.
+    // Up to 3 attempts on primary SDK path with short backoff before falling back.
     for (int attempt = 0; attempt < 3 && !uploaded; attempt++) {
       if (attempt > 0) {
-        await Future.delayed(Duration(milliseconds: 800 * attempt));
+        await Future.delayed(Duration(milliseconds: 300 * attempt));
       }
       try {
         await client.storage.from(inspectionPhotoBucket).uploadBinary(
@@ -712,7 +743,7 @@ class SupabaseRepository {
       // REST fallback with its own retry.
       for (int attempt = 0; attempt < 2 && !uploaded; attempt++) {
         if (attempt > 0) {
-          await Future.delayed(const Duration(milliseconds: 1200));
+          await Future.delayed(const Duration(milliseconds: 500));
         }
         try {
           uploadedPath = fallbackStoragePath;
@@ -738,52 +769,23 @@ class SupabaseRepository {
     final photoUrl =
         client.storage.from(inspectionPhotoBucket).getPublicUrl(uploadedPath);
 
-    try {
-      await client.from('inspection_photos').insert({
-        'auth_user_id': client.auth.currentUser?.id,
-        'property_id': propertyId,
-        'inspection_id': inspectionId,
-        'kepr_id': keprId,
-        'society_name': societyName,
-        'flat_number': flatNumber,
-        'area_name': areaName,
-        'item_key': itemId,
-        'file_name': safeFileName,
-        'mime_type': 'image/jpeg',
-        'byte_size': uploadBytes.length,
-        'photo_url': photoUrl,
-      });
-    } catch (_) {
-      // Photo evidence URL is stored on inspection_issues.photo_urls. The legacy
-      // inspection_photos row is best-effort for older deployments.
-    }
+    // Fire-and-forget: audit row is best-effort; do not block the caller.
+    client.from('inspection_photos').insert({
+      'auth_user_id': client.auth.currentUser?.id,
+      'property_id': propertyId,
+      'inspection_id': inspectionId,
+      'kepr_id': keprId,
+      'society_name': societyName,
+      'flat_number': flatNumber,
+      'area_name': areaName,
+      'item_key': itemId,
+      'file_name': safeFileName,
+      'mime_type': 'image/jpeg',
+      'byte_size': uploadBytes.length,
+      'photo_url': photoUrl,
+    }).catchError((_) {});
 
     return photoUrl;
-  }
-
-  Uint8List _compressImageForUpload(Uint8List bytes) {
-    if (bytes.length <= 50 * 1024) return bytes;
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-
-    var width = decoded.width > 960 ? 960 : decoded.width;
-    var quality = 60;
-    Uint8List encoded = bytes;
-
-    while (true) {
-      final resized = decoded.width > width
-          ? img.copyResize(decoded, width: width)
-          : decoded;
-      encoded = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-      if (encoded.length <= 50 * 1024) return encoded;
-      if (quality > 32) {
-        quality -= 7;
-      } else if (width > 480) {
-        width = (width * 0.82).round().clamp(420, width).toInt();
-      } else {
-        return encoded;
-      }
-    }
   }
 
   Future<String> uploadInspectionReportPdf({
