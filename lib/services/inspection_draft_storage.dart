@@ -13,6 +13,7 @@ class InspectionDraftStorage {
   static const _activePageKey = 'kepr.inspection.active_page.v1';
   static const _activeAreaKey = 'kepr.inspection.active_area.v1';
   static const _submittedReportsKey = 'kepr.inspection.submitted_reports.v1';
+  static const _startFlowKey = 'kepr.inspection.start_flow.v1';
 
   static String get _activeAreasKey {
     final inspectionId = InspectionSession.inspectionId;
@@ -150,6 +151,7 @@ class InspectionDraftStorage {
     await prefs.remove(_activePageKey);
     await prefs.remove(_activeAreaKey);
     await prefs.remove(_submittedReportsKey);
+    await prefs.remove(_startFlowKey);
   }
 
   static Future<void> clearAreas() async {
@@ -164,6 +166,30 @@ class InspectionDraftStorage {
     await prefs.remove(_activeAreaKey);
     InspectionSession.clearInspection();
     await saveSession();
+  }
+
+  static Future<void> saveStartFlow(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_startFlowKey, jsonEncode(data));
+  }
+
+  static Future<Map<String, dynamic>?> loadStartFlow() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_startFlowKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return (jsonDecode(raw) as Map).map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    } catch (_) {
+      await prefs.remove(_startFlowKey);
+      return null;
+    }
+  }
+
+  static Future<void> clearStartFlow() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_startFlowKey);
   }
 
   static Future<void> saveSubmittedReport(

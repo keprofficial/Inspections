@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
-import 'screens/inspections_dashboard_screen.dart';
 import 'screens/signin_screen.dart';
 import 'services/inspection_draft_storage.dart';
-import 'services/inspection_session.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,10 +35,10 @@ class KeprApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
-      home: InspectionSession.hasFreshInspectorSession &&
-              InspectionSession.isActive
-          ? const InspectionsDashboardScreen()
-          : const SignInScreen(),
+      // Always enter through SignInScreen. It restores a fresh inspector
+      // session into the inspector dashboard and offers any active inspection
+      // as a Continue card instead of bypassing the dashboard entirely.
+      home: const SignInScreen(),
     );
   }
 }

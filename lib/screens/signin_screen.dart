@@ -48,6 +48,9 @@ class _SignInScreenState extends State<SignInScreen> {
   _InspectionMode? _inspectionMode;
   String? _inspectionPlan;
   bool _showPropertyFields = false;
+  int _dashboardStep = 0;
+  List<SubmittedInspectionReport> _dashboardReports = const [];
+  bool _isLoadingDashboardStats = false;
   int _societyLoadToken = 0;
   int _blockLoadToken = 0;
   int _flatLoadToken = 0;
@@ -80,6 +83,109 @@ class _SignInScreenState extends State<SignInScreen> {
       InspectionDraftStorage.saveSession();
     }
     _loadSocieties();
+    if (_authenticatedInspector != null) {
+      _restoreStartFlow();
+      _loadDashboardStats();
+    }
+  }
+
+  Future<void> _restoreStartFlow() async {
+    final data = await InspectionDraftStorage.loadStartFlow();
+    if (data == null || !mounted || InspectionSession.isActive) return;
+    final mode = data['mode']?.toString();
+    final plan = data['plan']?.toString();
+    setState(() {
+      _dashboardStep =
+          ((data['step'] as num?)?.toInt() ?? 0).clamp(0, 3).toInt();
+      _inspectionMode = mode == 'flat'
+          ? _InspectionMode.flat
+          : mode == 'society'
+              ? _InspectionMode.society
+              : mode == 'individual'
+                  ? _InspectionMode.individual
+                  : null;
+      _inspectionPlan =
+          plan == 'free' || plan == 'paid' || plan == 'adhoc' ? plan : null;
+      _individualPropertyController.text =
+          data['propertyName']?.toString() ?? '';
+      _ownerNameController.text = data['ownerName']?.toString() ?? '';
+      _ownerMobileController.text = data['ownerMobile']?.toString() ?? '';
+      _selectedSociety = _optionFromDraft(data['society']);
+      _selectedBlock = _optionFromDraft(data['block']);
+      _selectedFlat = _optionFromDraft(data['flat']);
+      _societyController.text = _selectedSociety?.name ?? '';
+      _blockController.text = _selectedBlock?.name ?? '';
+      _flatController.text = _selectedFlat?.name ?? '';
+      _showPropertyFields = _dashboardStep == 3;
+    });
+  }
+
+  PropertyOption? _optionFromDraft(Object? value) {
+    if (value is! Map) return null;
+    final data = value.map((key, value) => MapEntry(key.toString(), value));
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return PropertyOption(
+      id: id,
+      name: data['name']?.toString() ?? '',
+      propertyCode: data['propertyCode']?.toString(),
+      address: data['address']?.toString(),
+    );
+  }
+
+  Map<String, dynamic>? _optionToDraft(PropertyOption? option) => option == null
+      ? null
+      : {
+          'id': option.id,
+          'name': option.name,
+          'propertyCode': option.propertyCode,
+          'address': option.address,
+        };
+
+  Future<void> _saveStartFlow() => InspectionDraftStorage.saveStartFlow({
+        'step': _dashboardStep,
+        'mode': _inspectionMode?.name,
+        'plan': _inspectionPlan,
+        'society': _optionToDraft(_selectedSociety),
+        'block': _optionToDraft(_selectedBlock),
+        'flat': _optionToDraft(_selectedFlat),
+        'propertyName': _individualPropertyController.text,
+        'ownerName': _ownerNameController.text,
+        'ownerMobile': _ownerMobileController.text,
+      });
+
+  Future<void> _loadDashboardStats() async {
+    if (_isLoadingDashboardStats) return;
+    setState(() => _isLoadingDashboardStats = true);
+    try {
+      final remote =
+          await SupabaseRepository.instance.fetchSubmittedInspectionReports(
+        inspectorId: InspectionSession.inspectorId,
+        inspectorName: InspectionSession.inspectorName,
+        inspectorMobile: InspectionSession.mobileNumber,
+        limit: 100,
+      );
+      final local = await InspectionDraftStorage.loadSubmittedReports();
+      final reports = <String, SubmittedInspectionReport>{};
+      for (final report in [...remote, ...local]) {
+        reports[report.inspectionId] = report;
+      }
+      if (!mounted) return;
+      setState(() {
+        _dashboardReports = reports.values.toList()
+          ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+      });
+    } catch (_) {
+      final local = await InspectionDraftStorage.loadSubmittedReports();
+      if (mounted) {
+        setState(() {
+          _dashboardReports = local
+            ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingDashboardStats = false);
+    }
   }
 
   @override
@@ -204,9 +310,9 @@ class _SignInScreenState extends State<SignInScreen> {
                             child: KeprButton(
                               label: 'Continue',
                               isLoading: _isAuthenticating,
-                              enabled: _canAuthenticate,
+                              enabled: !_isAuthenticating,
                               onPressed:
-                                  _canAuthenticate ? _authenticate : null,
+                                  _isAuthenticating ? null : _authenticate,
                             ),
                           ),
                         ],
@@ -304,6 +410,13 @@ class _SignInScreenState extends State<SignInScreen> {
         backgroundColor: AppColors.coral,
         foregroundColor: Colors.white,
         elevation: 0,
+        leading: _dashboardStep == 0
+            ? null
+            : IconButton(
+                tooltip: 'Back',
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _previousDashboardStep,
+              ),
         title: Row(
           children: [
             const KeprLogo(size: 38),
@@ -342,50 +455,68 @@ class _SignInScreenState extends State<SignInScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Good ${_dayPeriod()}, ${inspector.displayName}',
-                  style: AppStyles.headlineMd.copyWith(
-                    color: AppColors.navy,
-                    fontWeight: FontWeight.w800,
+                if (_dashboardStep == 0) ...[
+                  Text(
+                    'Good ${_dayPeriod()}, ${inspector.displayName}',
+                    style: AppStyles.headlineMd.copyWith(
+                      color: AppColors.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'What would you like to inspect today?',
-                  style: AppStyles.bodyMd.copyWith(
-                    color: AppColors.neutral600,
+                  const SizedBox(height: 6),
+                  Text(
+                    "Here's your inspection activity",
+                    style: AppStyles.bodyMd.copyWith(
+                      color: AppColors.neutral600,
+                    ),
                   ),
-                ),
-                if (InspectionSession.isActive) ...[
                   const SizedBox(height: 20),
-                  _buildResumeInspectionCard(),
-                ],
-                const SizedBox(height: 24),
-                _buildDashboardSectionTitle(
-                  'Choose property',
-                  'Step 1 of 2',
-                ),
-                const SizedBox(height: 12),
-                _buildInspectionModeSelector(),
-                if (_inspectionMode != null) ...[
+                  _buildDashboardStats(),
+                  const SizedBox(height: 18),
+                  _buildWeeklyChart(),
+                  if (InspectionSession.isActive) ...[
+                    const SizedBox(height: 20),
+                    _buildResumeInspectionCard(),
+                  ],
                   const SizedBox(height: 24),
-                  _buildDashboardSectionTitle(
-                    'Choose inspection',
-                    'Step 2 of 2',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInspectionPlanSelector(),
-                ],
-                if (canContinue && !_showPropertyFields) ...[
-                  const SizedBox(height: 20),
                   KeprButton(
-                    label: 'Continue to property details',
-                    showArrow: true,
-                    onPressed: () => setState(() => _showPropertyFields = true),
+                    label: 'Start new inspection',
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _inspectionMode = null;
+                        _inspectionPlan = null;
+                        _showPropertyFields = false;
+                        _dashboardStep = 1;
+                      });
+                      _saveStartFlow();
+                    },
                   ),
-                ],
-                if (_showPropertyFields && canContinue) ...[
-                  const SizedBox(height: 26),
+                ] else if (_dashboardStep == 1) ...[
+                  _buildDashboardSectionTitle('Choose property', 'Step 1 of 3'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'What are you inspecting?',
+                    style:
+                        AppStyles.bodyMd.copyWith(color: AppColors.neutral600),
+                  ),
+                  const SizedBox(height: 18),
+                  _buildInspectionModeSelector(),
+                ] else if (_dashboardStep == 2) ...[
+                  _buildDashboardSectionTitle(
+                      'Choose inspection', 'Step 2 of 3'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Select the plan for this ${_selectedModeLabel().toLowerCase()}.',
+                    style:
+                        AppStyles.bodyMd.copyWith(color: AppColors.neutral600),
+                  ),
+                  const SizedBox(height: 18),
+                  _buildInspectionPlanSelector(),
+                ] else if (canContinue) ...[
+                  _buildDashboardSectionTitle(
+                      'Property details', 'Step 3 of 3'),
+                  const SizedBox(height: 14),
                   _buildPropertyFieldsCard(),
                 ],
               ],
@@ -393,13 +524,32 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: BottomNav(
-        activeTab: BottomNavTab.home,
-        onTabChange: (tab) {
-          if (tab == BottomNavTab.profile) _openProfile();
-        },
-      ),
+      bottomNavigationBar: _dashboardStep == 0
+          ? BottomNav(
+              activeTab: BottomNavTab.home,
+              onTabChange: (tab) {
+                if (tab == BottomNavTab.profile) _openProfile();
+              },
+            )
+          : null,
     );
+  }
+
+  void _previousDashboardStep() {
+    setState(() {
+      if (_dashboardStep <= 1) {
+        _dashboardStep = 0;
+        _inspectionMode = null;
+        _inspectionPlan = null;
+      } else {
+        _dashboardStep--;
+      }
+    });
+    if (_dashboardStep == 0) {
+      InspectionDraftStorage.clearStartFlow();
+    } else {
+      _saveStartFlow();
+    }
   }
 
   Widget _buildDashboardSectionTitle(String title, String step) {
@@ -488,6 +638,188 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
+  Widget _buildDashboardStats() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+    final todayCount = _dashboardReports
+        .where((report) => !report.submittedAt.toLocal().isBefore(today))
+        .length;
+    final weekCount = _dashboardReports
+        .where((report) => !report.submittedAt.toLocal().isBefore(weekStart))
+        .length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            value: _dashboardReports.length,
+            label: 'Total',
+            icon: Icons.assignment_turned_in_outlined,
+            color: AppColors.navy,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            value: todayCount,
+            label: 'Today',
+            icon: Icons.today_outlined,
+            color: const Color(0xFF109A8D),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            value: weekCount,
+            label: 'This week',
+            icon: Icons.bar_chart_rounded,
+            color: const Color(0xFFF59E0B),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required int value,
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 112),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.22),
+            blurRadius: 14,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.white, size: 22),
+          const SizedBox(height: 12),
+          Text(
+            '$value',
+            style: AppStyles.headlineMd.copyWith(
+              color: Colors.white,
+              fontSize: 27,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppStyles.labelSm.copyWith(
+              color: Colors.white.withOpacity(0.92),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklyChart() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+    final counts = List<int>.generate(7, (index) {
+      final day = weekStart.add(Duration(days: index));
+      final nextDay = day.add(const Duration(days: 1));
+      return _dashboardReports.where((report) {
+        final submitted = report.submittedAt.toLocal();
+        return !submitted.isBefore(day) && submitted.isBefore(nextDay);
+      }).length;
+    });
+    final maxCount =
+        counts.fold<int>(1, (max, count) => count > max ? count : max);
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.neutral200),
+        boxShadow: AppColors.shadowSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.show_chart, color: AppColors.coral),
+              const SizedBox(width: 8),
+              Text(
+                'Weekly inspections',
+                style: AppStyles.labelMd.copyWith(
+                  color: AppColors.navy,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 128,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(7, (index) {
+                final isToday = index == today.weekday - 1;
+                final height =
+                    counts[index] == 0 ? 5.0 : 84.0 * counts[index] / maxCount;
+                return Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${counts[index]}',
+                        style: AppStyles.labelSm.copyWith(
+                          color: AppColors.neutral500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        width: 18,
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: isToday
+                              ? AppColors.coral
+                              : AppColors.coral.withOpacity(0.48),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        labels[index],
+                        style: AppStyles.labelSm.copyWith(
+                          color:
+                              isToday ? AppColors.coral : AppColors.neutral600,
+                          fontWeight:
+                              isToday ? FontWeight.w900 : FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPropertyFieldsCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -515,7 +847,10 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () => setState(() => _showPropertyFields = false),
+                onPressed: () {
+                  setState(() => _dashboardStep = 1);
+                  _saveStartFlow();
+                },
                 child: const Text('Change'),
               ),
             ],
@@ -535,8 +870,8 @@ class _SignInScreenState extends State<SignInScreen> {
                     ? 'Start Society Inspection'
                     : 'Start Individual Inspection',
             isLoading: _isSigningIn,
-            enabled: _canSignIn && !_isSigningIn,
-            onPressed: _canSignIn && !_isSigningIn ? _signIn : null,
+            enabled: !_isSigningIn,
+            onPressed: _isSigningIn ? null : _attemptStartInspection,
           ),
         ],
       ),
@@ -610,39 +945,29 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 390;
-          final cards = [
-            Expanded(
-              child: _buildModeCard(
-                mode: _InspectionMode.flat,
-                icon: Icons.apartment_outlined,
-                title: 'Flat Property',
-                subtitle: 'Society, block and flat',
-              ),
-            ),
-            SizedBox(width: compact ? 6 : 8),
-            Expanded(
-              child: _buildModeCard(
-                mode: _InspectionMode.society,
-                icon: Icons.business_outlined,
-                title: 'Society',
-                subtitle: 'Common areas and amenities',
-              ),
-            ),
-            SizedBox(width: compact ? 6 : 8),
-            Expanded(
-              child: _buildModeCard(
-                mode: _InspectionMode.individual,
-                icon: Icons.person_pin_circle_outlined,
-                title: 'Individual Home',
-                subtitle: 'Independent owner property',
-              ),
-            ),
-          ];
-          return Row(children: cards);
-        },
+      child: Column(
+        children: [
+          _buildModeCard(
+            mode: _InspectionMode.flat,
+            icon: Icons.apartment_outlined,
+            title: 'Flat Property',
+            subtitle: 'Society, block and flat',
+          ),
+          const SizedBox(height: 10),
+          _buildModeCard(
+            mode: _InspectionMode.society,
+            icon: Icons.business_outlined,
+            title: 'Society',
+            subtitle: 'Common areas and amenities',
+          ),
+          const SizedBox(height: 10),
+          _buildModeCard(
+            mode: _InspectionMode.individual,
+            icon: Icons.person_pin_circle_outlined,
+            title: 'Individual Home',
+            subtitle: 'Independent owner property',
+          ),
+        ],
       ),
     );
   }
@@ -658,11 +983,15 @@ class _SignInScreenState extends State<SignInScreen> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => setState(() {
-          _inspectionMode = mode;
-          _inspectionPlan = null;
-          _showPropertyFields = false;
-        }),
+        onTap: () {
+          setState(() {
+            _inspectionMode = mode;
+            _inspectionPlan = null;
+            _showPropertyFields = false;
+            _dashboardStep = 2;
+          });
+          _saveStartFlow();
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
@@ -790,33 +1119,27 @@ class _SignInScreenState extends State<SignInScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.neutral200),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: _buildPlanCard(
-              plan: 'free',
-              title: 'Free',
-              subtitle: '50 basic checks',
-              icon: Icons.fact_check_outlined,
-            ),
+          _buildPlanCard(
+            plan: 'free',
+            title: 'Free',
+            subtitle: '50 basic checks',
+            icon: Icons.fact_check_outlined,
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildPlanCard(
-              plan: 'adhoc',
-              title: 'Ad-hoc',
-              subtitle: 'Create custom checks',
-              icon: Icons.playlist_add_check_outlined,
-            ),
+          const SizedBox(height: 10),
+          _buildPlanCard(
+            plan: 'adhoc',
+            title: 'Ad-hoc',
+            subtitle: 'Create custom checks',
+            icon: Icons.playlist_add_check_outlined,
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildPlanCard(
-              plan: 'paid',
-              title: 'Paid',
-              subtitle: 'Complete checklist',
-              icon: Icons.workspace_premium_outlined,
-            ),
+          const SizedBox(height: 10),
+          _buildPlanCard(
+            plan: 'paid',
+            title: 'Paid',
+            subtitle: 'Complete checklist',
+            icon: Icons.workspace_premium_outlined,
           ),
         ],
       ),
@@ -832,10 +1155,14 @@ class _SignInScreenState extends State<SignInScreen> {
     final selected = _inspectionPlan == plan;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => setState(() {
-        _inspectionPlan = plan;
-        _showPropertyFields = false;
-      }),
+      onTap: () {
+        setState(() {
+          _inspectionPlan = plan;
+          _showPropertyFields = true;
+          _dashboardStep = 3;
+        });
+        _saveStartFlow();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         constraints: const BoxConstraints(minHeight: 70),
@@ -990,7 +1317,10 @@ class _SignInScreenState extends State<SignInScreen> {
       TextField(
         controller: _individualPropertyController,
         textInputAction: TextInputAction.next,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          setState(() {});
+          _saveStartFlow();
+        },
         decoration: AppStyles.buildInputDecoration(
           hint: 'Example: Independent house, shop, office',
           prefixIcon: const Icon(Icons.home_work_outlined),
@@ -1001,7 +1331,10 @@ class _SignInScreenState extends State<SignInScreen> {
       TextField(
         controller: _ownerNameController,
         textInputAction: TextInputAction.next,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          setState(() {});
+          _saveStartFlow();
+        },
         decoration: AppStyles.buildInputDecoration(
           hint: 'Owner full name',
           prefixIcon: const Icon(Icons.person_outline),
@@ -1013,7 +1346,10 @@ class _SignInScreenState extends State<SignInScreen> {
         controller: _ownerMobileController,
         keyboardType: TextInputType.phone,
         textInputAction: TextInputAction.done,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          setState(() {});
+          _saveStartFlow();
+        },
         decoration: AppStyles.buildInputDecoration(
           hint: '9876543210',
           prefixIcon: const Icon(Icons.phone_outlined),
@@ -1252,6 +1588,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _blockLoadToken++;
       _flatLoadToken++;
     });
+    _saveStartFlow();
     _loadBlocks();
   }
 
@@ -1266,6 +1603,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _showFlatOptions = false;
       _flatLoadToken++;
     });
+    _saveStartFlow();
     _loadFlats();
   }
 
@@ -1275,6 +1613,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _flatController.text = option.name;
       _showFlatOptions = false;
     });
+    _saveStartFlow();
   }
 
   void _clearSociety() {
@@ -1293,6 +1632,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _blockLoadToken++;
       _flatLoadToken++;
     });
+    _saveStartFlow();
     _loadSocieties();
   }
 
@@ -1307,6 +1647,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _showFlatOptions = false;
       _flatLoadToken++;
     });
+    _saveStartFlow();
     _loadBlocks();
   }
 
@@ -1316,6 +1657,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _flatController.clear();
       _showFlatOptions = true;
     });
+    _saveStartFlow();
     _loadFlats();
   }
 
@@ -1365,6 +1707,13 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _authenticate() async {
+    if (!_canAuthenticate) {
+      await _showMessage(
+        'Enter login details',
+        'Enter your registered mobile number and password to continue.',
+      );
+      return;
+    }
     setState(() => _isAuthenticating = true);
     try {
       final login = await SupabaseRepository.instance.authenticateInspector(
@@ -1383,14 +1732,19 @@ class _SignInScreenState extends State<SignInScreen> {
       InspectionSession.authToken = login.authToken;
       InspectionSession.lastLoginAt = DateTime.now();
       await InspectionDraftStorage.saveSession();
+      await _loadDashboardStats();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Welcome ${login.displayName}')),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $error')),
+      final message = _isConnectionError(error)
+          ? 'Unable to connect. Check your internet connection and try again.'
+          : 'The mobile number or password is incorrect. Please check and try again.';
+      await _showMessage(
+        _isConnectionError(error) ? 'Connection problem' : 'Login failed',
+        message,
       );
     } finally {
       if (mounted) setState(() => _isAuthenticating = false);
@@ -1412,20 +1766,79 @@ class _SignInScreenState extends State<SignInScreen> {
       if (_isExpiredSessionError(error)) {
         await _clearExpiredLogin();
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Login expired. Please enter mobile and password again.'),
-          ),
+        await _showMessage(
+          'Login expired',
+          'Your login session has expired. Please enter your mobile number and password again.',
         );
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not start inspection: $error')),
+      await _showMessage(
+        'Inspection could not start',
+        _isConnectionError(error)
+            ? 'We could not connect to the server. Check your internet connection and try again.'
+            : 'We could not create this inspection. Please try again. If the problem continues, contact support.',
       );
     } finally {
       if (mounted) setState(() => _isSigningIn = false);
     }
+  }
+
+  Future<void> _attemptStartInspection() async {
+    final missing = _missingInspectionDetails();
+    if (missing != null) {
+      await _showMessage('Cannot start inspection', missing);
+      return;
+    }
+    await _saveStartFlow();
+    await _signIn();
+  }
+
+  String? _missingInspectionDetails() {
+    if (_inspectionMode == null) return 'Select the property type first.';
+    if (_inspectionPlan == null) return 'Select an inspection plan first.';
+    if (_inspectionMode == _InspectionMode.flat) {
+      if (_selectedSociety == null) return 'Select a society to continue.';
+      if (_selectedBlock == null) return 'Select a block to continue.';
+      if (_selectedFlat == null) return 'Select a flat to continue.';
+    } else if (_inspectionMode == _InspectionMode.society) {
+      if (_selectedSociety == null) return 'Select a society to continue.';
+    } else {
+      if (_individualPropertyController.text.trim().length < 2) {
+        return 'Enter the property or house name.';
+      }
+      if (_ownerNameController.text.trim().length < 2) {
+        return 'Enter the owner name.';
+      }
+      final digits = _ownerMobileController.text.replaceAll(RegExp(r'\D'), '');
+      if (digits.length < 8) return 'Enter a valid owner mobile number.';
+    }
+    return null;
+  }
+
+  bool _isConnectionError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('socket') ||
+        text.contains('network') ||
+        text.contains('timeout') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection');
+  }
+
+  Future<void> _showMessage(String title, String message) {
+    if (!mounted) return Future.value();
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _isExpiredSessionError(Object error) {
