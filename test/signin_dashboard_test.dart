@@ -27,7 +27,23 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('This week'), findsOneWidget);
     expect(find.text('Start new inspection'), findsOneWidget);
+    expect(find.byTooltip('Navigation'), findsOneWidget);
     expect(find.text('Flat Property'), findsNothing);
+
+    await tester.tap(find.text('Total'));
+    await tester.pumpAndSettle();
+    expect(find.text('All inspections'), findsOneWidget);
+    expect(find.text('No inspections in this period'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Navigation'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dashboard'), findsOneWidget);
+    expect(find.text('Start inspection'), findsOneWidget);
+    expect(find.text('Profile'), findsWidgets);
+    await tester.tap(find.text('Dashboard'));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('Start new inspection'));
     await tester.tap(find.text('Start new inspection'));

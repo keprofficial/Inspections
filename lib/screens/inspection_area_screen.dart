@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../constants/app_styles.dart';
 import '../constants/colors.dart';
+import '../constants/inspection_icons.dart';
 import '../models/models.dart';
 import '../services/inspection_draft_storage.dart';
 import '../services/inspection_session.dart';
@@ -50,51 +50,94 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.neutral50,
-      appBar: AppBar(
-        backgroundColor: AppColors.coral,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white),
-          onPressed: _closeWithCurrentArea,
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.area.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              '${items.length} parameter checks',
-              style: AppStyles.labelSm.copyWith(
-                color: Colors.white.withOpacity(0.9),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(56),
+        child: Builder(
+          builder: (context) {
+            final areaColor = iconColorFor(widget.area.icon);
+            final darkColor =
+                Color.lerp(areaColor, Colors.black, 0.35) ?? areaColor;
+            return Container(
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Text(
-                '$completedCount/${items.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                gradient: LinearGradient(
+                  colors: [areaColor, darkColor],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
                 ),
               ),
-            ),
-          ),
-        ],
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                  icon:
+                      const Icon(Icons.chevron_left, color: Colors.white),
+                  onPressed: _closeWithCurrentArea,
+                ),
+                title: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        iconDataFor(widget.area.icon),
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          widget.area.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${items.length} checks',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.85),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      child: Text(
+                        '$completedCount/${items.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
       body: Stack(
         children: [
@@ -225,46 +268,65 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
   }
 
   Widget _buildProgressCard() {
+    final areaColor = iconColorFor(widget.area.icon);
+    final remaining = items.length - completedCount;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.neutral200),
-        boxShadow: AppColors.shadowSm,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppColors.shadowMd,
       ),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Section Progress',
-                style: AppStyles.labelMd.copyWith(color: AppColors.navy),
-              ),
-              Text(
-                '$progress%',
-                style: AppStyles.bodyLg.copyWith(
-                  color: AppColors.coral,
-                  fontWeight: FontWeight.bold,
+          areaIconBox(widget.area.icon, size: 56, iconSize: 28, radius: 14),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.area.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.navy,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  remaining == 0
+                      ? 'All checks complete!'
+                      : '$remaining of ${items.length} checks remaining',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: remaining == 0
+                        ? AppColors.success
+                        : AppColors.neutral500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress / 100,
+                    minHeight: 7,
+                    backgroundColor: AppColors.neutral100,
+                    valueColor: AlwaysStoppedAnimation(
+                      progress == 100 ? AppColors.success : areaColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(width: 12),
           Text(
-            '${items.length - completedCount} items remaining in ${widget.area.name}',
-            style: AppStyles.bodySm.copyWith(color: AppColors.neutral600),
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress / 100,
-              minHeight: 8,
-              backgroundColor: AppColors.neutral200,
-              valueColor: const AlwaysStoppedAnimation(AppColors.coral),
+            '$progress%',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: progress == 100 ? AppColors.success : areaColor,
             ),
           ),
         ],
@@ -293,83 +355,129 @@ class _InspectionAreaScreenState extends State<InspectionAreaScreen> {
         await _persistCurrentArea(_currentArea());
       },
       child: Opacity(
-        opacity: item.completed ? 0.6 : 1.0,
+        opacity: item.completed ? 0.65 : 1.0,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.neutral200),
+            borderRadius: BorderRadius.circular(12),
             boxShadow: AppColors.shadowSm,
           ),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: item.completed
-                        ? AppColors.success
-                        : AppColors.neutral300,
-                    width: 2,
-                  ),
-                  color: item.completed ? AppColors.success : Colors.white,
-                  borderRadius: BorderRadius.circular(4),
+          clipBehavior: Clip.antiAlias,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Severity left strip
+                Container(
+                  width: 5,
+                  color: item.completed
+                      ? AppColors.success
+                      : _severityColor(severity),
                 ),
-                child: item.completed
-                    ? const Icon(Icons.check, size: 16, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: AppStyles.labelMd.copyWith(color: AppColors.navy),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${item.category} - ${severity.toUpperCase()}',
-                      style: AppStyles.bodySm.copyWith(
-                        color: _severityColor(severity),
-                      ),
-                    ),
-                    if ((item.serviceCode ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Service ${item.serviceCode} - Rs ${item.estimatedCost?.toStringAsFixed(0) ?? '0'}',
-                        style: AppStyles.bodySm.copyWith(
-                          color: AppColors.neutral500,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 13),
+                    child: Row(
+                      children: [
+                        // Severity icon badge
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: (item.completed
+                                    ? AppColors.success
+                                    : _severityColor(severity))
+                                .withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            item.completed
+                                ? Icons.check_circle_rounded
+                                : severityIcon(severity),
+                            color: item.completed
+                                ? AppColors.success
+                                : _severityColor(severity),
+                            size: 22,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.navy,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _severityColor(severity)
+                                          .withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      severity.toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: _severityColor(severity),
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      item.category,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.neutral500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if ((item.serviceCode ?? '').isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Rs ${item.estimatedCost?.toStringAsFixed(0) ?? '0'}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.neutral500,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.neutral300,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const Icon(Icons.chevron_right, color: AppColors.neutral400),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Color _severityColor(String severity) {
-    switch (severity) {
-      case 'critical':
-        return Colors.red.shade900;
-      case 'high':
-        return AppColors.error;
-      case 'medium':
-        return AppColors.warning;
-      case 'low':
-        return AppColors.success;
-      default:
-        return AppColors.neutral500;
-    }
-  }
+  Color _severityColor(String s) => severityColor(s);
 }

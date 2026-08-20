@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import '../config/supabase_config.dart';
 import '../constants/app_styles.dart';
 import '../constants/colors.dart';
+import '../constants/inspection_icons.dart';
 import '../data/inspection_checklist_data.dart';
 import '../models/models.dart';
 import '../services/inspection_draft_storage.dart';
 import '../services/inspection_session.dart';
 import '../services/report_pdf_service.dart';
 import '../services/supabase_repository.dart';
-import '../widgets/badge.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_header.dart';
@@ -31,6 +32,8 @@ class _InspectionsDashboardScreenState
   List<InspectionAreaTemplate> availableTemplates = const [];
   bool _isFinalSubmitting = false;
   bool _didRestoreActiveArea = false;
+  bool _isLoadingChecklist = true;
+  String? _checklistLoadError;
 
   int get completedItems => areas.fold(
         0,
@@ -76,6 +79,32 @@ class _InspectionsDashboardScreenState
         .toList();
   }
 
+  Color get _modeAccentColor {
+    switch (InspectionSession.inspectionMode ?? 'flat') {
+      case 'society':
+        return const Color(0xFF1565C0);
+      case 'individual':
+        return const Color(0xFF00897B);
+      default:
+        return AppColors.coral;
+    }
+  }
+
+  String get _heroBannerAsset {
+    final mode = InspectionSession.inspectionMode ?? 'flat';
+    final hour = DateTime.now().hour;
+    switch (mode) {
+      case 'society':
+        return hour < 17
+            ? 'assets/images/SocietyBannerMorning.png'
+            : 'assets/images/SocietyBannerEvening.png';
+      case 'individual':
+        return 'assets/images/intro_individual.png';
+      default:
+        return 'assets/images/intro_flat.png';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -104,54 +133,66 @@ class _InspectionsDashboardScreenState
       appBar: KeprHeader(
         title: 'Kepr',
         subtitle: InspectionSession.flatNumber ?? 'Inspection',
-        onLogoTap: _goHome,
+        onLogoTap: _goInspectorDashboard,
         onNotificationTap: _showNotifications,
         onMenuTap: _showQuickSelector,
       ),
       body: Stack(
         children: [
           SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProgressCard(),
-                  const SizedBox(height: 20),
-                  _buildSearchRow(),
-                  const SizedBox(height: 20),
-                  _buildAreasHeader(),
-                  const SizedBox(height: 12),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: filteredAreas.length,
-                    itemBuilder: (context, index) {
-                      return _buildAreaCard(filteredAreas[index]);
-                    },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeroBanner(),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildProgressCard(),
+                      const SizedBox(height: 20),
+                      _buildSearchRow(),
+                      const SizedBox(height: 20),
+                      _buildAreasHeader(),
+                      const SizedBox(height: 12),
+                      if (_isLoadingChecklist)
+                        _buildChecklistLoading()
+                      else if (_checklistLoadError != null)
+                        _buildChecklistError(_checklistLoadError!)
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: filteredAreas.length,
+                          itemBuilder: (context, index) {
+                            return _buildAreaCard(filteredAreas[index]);
+                          },
+                        ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: KeprButton(
+                          label: 'Add Area',
+                          icon: const Icon(Icons.add, color: Colors.white),
+                          onPressed: _showAddAreaSheet,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: KeprButton(
+                          label: 'Submit & Generate Report',
+                          icon:
+                              const Icon(Icons.cloud_done, color: Colors.white),
+                          isLoading: _isFinalSubmitting,
+                          onPressed: _isFinalSubmitting ? null : _finalSubmit,
+                        ),
+                      ),
+                      const SizedBox(height: 100),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: KeprButton(
-                      label: 'Add Area',
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      onPressed: _showAddAreaSheet,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: KeprButton(
-                      label: 'Submit & Generate Report',
-                      icon: const Icon(Icons.cloud_done, color: Colors.white),
-                      isLoading: _isFinalSubmitting,
-                      onPressed: _isFinalSubmitting ? null : _finalSubmit,
-                    ),
-                  ),
-                  const SizedBox(height: 100),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           Positioned(
@@ -172,7 +213,33 @@ class _InspectionsDashboardScreenState
     setState(() => activeTab = BottomNavTab.home);
   }
 
+  void _goInspectorDashboard() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+    );
+  }
+
   Future<void> _loadChecklistAndDraft() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingChecklist = true;
+        _checklistLoadError = null;
+      });
+    }
+    try {
+      await _doLoadChecklistAndDraft();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checklistLoadError =
+            e.toString().replaceFirst('Exception: ', '').trim());
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingChecklist = false);
+    }
+  }
+
+  Future<void> _doLoadChecklistAndDraft() async {
     final inspectionType = InspectionSession.inspectionMode ?? 'flat';
     final inspectionPlan = InspectionSession.inspectionPlan ?? 'paid';
     if (inspectionPlan == 'adhoc') {
@@ -222,11 +289,7 @@ class _InspectionsDashboardScreenState
       inspectionKind = await SupabaseRepository.instance
           .fetchChecklistKindForInspectionType(inspectionType: inspectionType);
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Checklist mapping missing: $error')),
-      );
-      return;
+      throw Exception('Checklist mapping missing: $error');
     }
 
     final remoteTemplates =
@@ -239,7 +302,12 @@ class _InspectionsDashboardScreenState
     final localAreas = await InspectionDraftStorage.loadAreas();
     final existingDraft = serverAreas ?? localAreas;
 
-    if (mounted && remoteTemplates.isNotEmpty) {
+    if (remoteTemplates.isEmpty) {
+      throw Exception(
+        'Checklist not found for "$inspectionKind". Run the checklist SQL setup.',
+      );
+    }
+    if (mounted) {
       final initialAreas = buildInspectionAreasFromTemplates(remoteTemplates);
       setState(() {
         availableTemplates = remoteTemplates;
@@ -253,14 +321,6 @@ class _InspectionsDashboardScreenState
           areas: initialAreas,
         );
       }
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Checklist not found in DB for $inspectionKind. Run the checklist SQL setup.',
-          ),
-        ),
-      );
     }
 
     final cachedAreas = existingDraft;
@@ -359,16 +419,16 @@ class _InspectionsDashboardScreenState
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Inspection Home'),
+              leading: const Icon(Icons.fact_check_outlined),
+              title: const Text('Current inspection'),
               onTap: () {
                 Navigator.pop(context);
                 _goHome();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.apartment_outlined),
-              title: const Text('Flat Selection'),
+              leading: const Icon(Icons.dashboard_outlined),
+              title: const Text('Inspector dashboard'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushReplacement(
@@ -378,8 +438,8 @@ class _InspectionsDashboardScreenState
               },
             ),
             ListTile(
-              leading: const Icon(Icons.login),
-              title: const Text('Login Page'),
+              leading: const Icon(Icons.logout),
+              title: const Text('Log out'),
               onTap: () async {
                 InspectionSession.clear();
                 await InspectionDraftStorage.clearAll();
@@ -485,14 +545,31 @@ class _InspectionsDashboardScreenState
 
   bool _isValidPublicUrl(String value) {
     final uri = Uri.tryParse(value);
+    final configuredHost = Uri.tryParse(SupabaseConfig.url)?.host ?? '';
     return uri != null &&
         uri.scheme == 'https' &&
         uri.path.isNotEmpty &&
-        uri.host == 'egalrsutygdvdmjkvduh.supabase.co' &&
+        (configuredHost.isEmpty || uri.host == configuredHost) &&
         uri.path.contains('/storage/v1/object/public/');
   }
 
   Future<void> _finalSubmit() async {
+    if (!InspectionSession.isAdhocInspection && completedItems < 5) {
+      await _showSubmitMessage(
+        'Minimum 5 checks required',
+        'Complete at least 5 inspection checks before submitting. '
+            'You have completed $completedItems of 5 required checks.',
+      );
+      return;
+    }
+    if (InspectionSession.isAdhocInspection && totalItems == 0) {
+      await _showSubmitMessage(
+        'Add an inspection check',
+        'Add and complete at least one custom inspection check before submitting.',
+      );
+      return;
+    }
+
     setState(() => _isFinalSubmitting = true);
     try {
       if (InspectionSession.isAdhocInspection) {
@@ -565,12 +642,47 @@ class _InspectionsDashboardScreenState
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Final submit failed: $error')),
+      await _showSubmitMessage(
+        'Report not submitted',
+        _friendlySubmitError(error),
       );
     } finally {
       if (mounted) setState(() => _isFinalSubmitting = false);
     }
+  }
+
+  String _friendlySubmitError(Object error) {
+    final text = error.toString().replaceFirst('Exception: ', '').trim();
+    final lower = text.toLowerCase();
+    final isDatabaseError = lower.contains('postgres') ||
+        lower.contains('postgrest') ||
+        lower.contains('pgrst') ||
+        lower.contains('sqlstate') ||
+        lower.contains('relation ') ||
+        lower.contains('column ');
+    if (isDatabaseError) {
+      return 'The server could not save this report. Your inspection remains available. Please try again or contact support.';
+    }
+    return text.isEmpty
+        ? 'The report could not be submitted. Please try again.'
+        : text;
+  }
+
+  Future<void> _showSubmitMessage(String title, String message) {
+    if (!mounted) return Future.value();
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _finalSubmitIndividualInspection() async {
@@ -639,31 +751,137 @@ class _InspectionsDashboardScreenState
     );
   }
 
+  Widget _buildHeroBanner() {
+    final mode = InspectionSession.inspectionMode ?? 'flat';
+    final modeLabel = mode == 'society'
+        ? 'SOCIETY'
+        : mode == 'individual'
+            ? 'INDIVIDUAL HOME'
+            : 'FLAT';
+    final accent = _modeAccentColor;
+    final propertyName = InspectionSession.societyName ?? 'Inspection';
+    final detail = InspectionSession.flatNumber;
+
+    return SizedBox(
+      height: 196,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            _heroBannerAsset,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [accent.withOpacity(0.8), accent],
+                ),
+              ),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0.25, 1.0],
+                colors: [Colors.transparent, Colors.black.withOpacity(0.72)],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 16,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withOpacity(0.45),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                modeLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            left: 16,
+            right: 16,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  propertyName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    shadows: [
+                      Shadow(color: Colors.black87, blurRadius: 8),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (detail != null && detail.isNotEmpty)
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 14,
+                      shadows: const [
+                        Shadow(color: Colors.black87, blurRadius: 6),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProgressCard() {
+    final accent = _modeAccentColor;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.neutral200),
-        boxShadow: AppColors.shadowSm,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppColors.shadowMd,
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Row(
         children: [
           SizedBox(
-            width: 120,
-            height: 120,
+            width: 100,
+            height: 100,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 SizedBox(
-                  width: 120,
-                  height: 120,
+                  width: 100,
+                  height: 100,
                   child: CircularProgressIndicator(
                     value: overallProgress / 100,
-                    strokeWidth: 8,
-                    backgroundColor: AppColors.neutral200,
-                    valueColor: const AlwaysStoppedAnimation(AppColors.coral),
+                    strokeWidth: 9,
+                    backgroundColor: AppColors.neutral100,
+                    valueColor: AlwaysStoppedAnimation(accent),
                   ),
                 ),
                 Column(
@@ -671,16 +889,19 @@ class _InspectionsDashboardScreenState
                   children: [
                     Text(
                       '$overallProgress%',
-                      style: const TextStyle(
-                        fontSize: 28,
+                      style: TextStyle(
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.navy,
+                        color: accent,
                       ),
                     ),
-                    Text(
+                    const Text(
                       'DONE',
-                      style: AppStyles.labelSm.copyWith(
+                      style: TextStyle(
+                        fontSize: 10,
                         color: AppColors.neutral500,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ],
@@ -694,46 +915,38 @@ class _InspectionsDashboardScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${InspectionSession.societyName ?? 'Property'} - Annual Audit',
-                  style: AppStyles.headlineMd.copyWith(
-                    color: AppColors.navy,
+                  InspectionSession.societyName ?? 'Property Inspection',
+                  style: const TextStyle(
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    color: AppColors.navy,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Dynamic checklist from KEPR Excel',
-                  style: AppStyles.bodySm.copyWith(
-                    color: AppColors.neutral500,
+                  '${(InspectionSession.inspectionMode ?? 'flat').toUpperCase()} · ${(InspectionSession.inspectionPlan ?? 'paid').toUpperCase()}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.neutral400,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
-                    AppBadge(
-                      label: '$completedItems Completed',
-                      variant: BadgeVariant.success,
-                    ),
-                    AppBadge(
-                      label: '${areas.length} Areas',
-                      variant: BadgeVariant.warning,
-                    ),
-                    AppBadge(
-                      label: '$pendingItems Pending',
-                      variant: BadgeVariant.error,
-                    ),
-                    AppBadge(
-                      label: '$totalItems Checks',
-                      variant: BadgeVariant.default_,
-                    ),
-                    AppBadge(
-                      label:
-                          'Rs ${criticalEstimateTotal.toStringAsFixed(0)} Critical Est.',
-                      variant: BadgeVariant.info,
-                    ),
+                    _miniChip('$completedItems Done', AppColors.success),
+                    _miniChip('$pendingItems Pending', AppColors.warning),
+                    _miniChip('${areas.length} Areas', accent),
+                    if (criticalUploadItems.isNotEmpty)
+                      _miniChip(
+                        'Rs ${criticalEstimateTotal.toStringAsFixed(0)}',
+                        AppColors.error,
+                      ),
                   ],
                 ),
               ],
@@ -744,38 +957,142 @@ class _InspectionsDashboardScreenState
     );
   }
 
+  Widget _miniChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchRow() {
+    final accent = _modeAccentColor;
     return Row(
       children: [
         Expanded(
           child: TextField(
             controller: searchController,
             decoration: AppStyles.buildInputDecoration(
-              hint: 'Search areas or parameters...',
-              prefixIcon: const Icon(Icons.search, color: AppColors.neutral400),
+              hint: 'Search areas or checks...',
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.neutral400,
+              ),
             ),
           ),
         ),
         const SizedBox(width: 12),
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.neutral200),
-            borderRadius: BorderRadius.circular(8),
-            color: Colors.white,
+            color: accent,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withOpacity(0.32),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               onTap: _showAddAreaSheet,
               child: const Padding(
                 padding: EdgeInsets.all(12),
-                child: Icon(Icons.add, color: AppColors.navy),
+                child: Icon(Icons.add_rounded, color: Colors.white, size: 22),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildChecklistLoading() {
+    final accent = _modeAccentColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation(accent),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Loading inspection checklist…',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.neutral500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChecklistError(String error) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.errorLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.error_outline_rounded,
+                  color: AppColors.error, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Could not load checklist',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error,
+            style: const TextStyle(fontSize: 13, color: AppColors.error),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: _loadChecklistAndDraft,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Retry'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.error,
+              textStyle: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -812,22 +1129,21 @@ class _InspectionsDashboardScreenState
         : ((completedCount / area.items.length) * 100).round();
     final isUrgent = area.items
         .any((item) => (item.severity ?? '').toLowerCase() == 'critical');
+    final accent = _modeAccentColor;
+    final leftBarColor = isUrgent ? AppColors.error : accent;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isUrgent ? const Color(0xFFdc2626) : AppColors.neutral200,
-          width: isUrgent ? 2 : 1,
-        ),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: AppColors.shadowSm,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           onTap: () async {
             await _saveDraft();
             await InspectionDraftStorage.setActiveAreaPage(area.id);
@@ -850,108 +1166,108 @@ class _InspectionsDashboardScreenState
               await _finalSubmit();
             }
           },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+          child: IntrinsicHeight(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  _iconFor(area.icon),
-                  color: AppColors.coral,
-                  size: 28,
+                Container(
+                  width: 5,
+                  color: leftBarColor,
                 ),
-                const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        area.name,
-                        style:
-                            AppStyles.labelMd.copyWith(color: AppColors.navy),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isUrgent
-                            ? 'Critical checks included'
-                            : '$pendingCount Pending - ${area.items.length} checks',
-                        style: AppStyles.bodySm.copyWith(
-                          color:
-                              isUrgent ? AppColors.error : AppColors.neutral500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '$progress%',
-                      style: AppStyles.labelMd.copyWith(
-                        color: progress == 100
-                            ? const Color(0xFF10B981)
-                            : AppColors.coral,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
                     ),
-                    const SizedBox(height: 4),
-                    if (progress == 100)
-                      const Icon(
-                        Icons.check_circle,
-                        color: Color(0xFF10B981),
-                        size: 20,
-                      )
-                    else
-                      SizedBox(
-                        width: 50,
-                        height: 3,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
-                          child: LinearProgressIndicator(
-                            value: progress / 100,
-                            backgroundColor: AppColors.neutral200,
-                            valueColor:
-                                const AlwaysStoppedAnimation(AppColors.coral),
+                    child: Row(
+                      children: [
+                        areaIconBox(
+                          area.icon,
+                          colorOverride: isUrgent ? AppColors.error : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                area.name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.navy,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                isUrgent
+                                    ? 'Critical checks included'
+                                    : '$pendingCount pending · ${area.items.length} checks',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isUrgent
+                                      ? AppColors.error
+                                      : AppColors.neutral500,
+                                ),
+                              ),
+                              if (!isUrgent && area.items.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(2),
+                                  child: LinearProgressIndicator(
+                                    value: progress / 100,
+                                    minHeight: 4,
+                                    backgroundColor: AppColors.neutral100,
+                                    valueColor: AlwaysStoppedAnimation(
+                                      progress == 100
+                                          ? AppColors.success
+                                          : accent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      ),
-                  ],
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (progress == 100)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppColors.success,
+                                size: 22,
+                              )
+                            else
+                              Text(
+                                '$progress%',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isUrgent ? AppColors.error : accent,
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.neutral300,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                const Icon(Icons.chevron_right, color: AppColors.neutral400),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  IconData _iconFor(String iconName) {
-    switch (iconName) {
-      case 'kitchen':
-        return Icons.kitchen;
-      case 'bed':
-        return Icons.bed;
-      case 'bathroom':
-        return Icons.bathroom;
-      case 'weekend':
-        return Icons.weekend;
-      case 'balcony':
-        return Icons.balcony;
-      case 'door_front_door':
-        return Icons.door_front_door;
-      case 'electrical_services':
-        return Icons.electrical_services;
-      case 'inventory_2':
-        return Icons.inventory_2;
-      case 'water_drop':
-        return Icons.water_drop;
-      case 'build':
-        return Icons.build;
-      default:
-        return Icons.home_work;
-    }
   }
 
   void _showAddAreaSheet() {

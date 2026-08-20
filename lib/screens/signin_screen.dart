@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_styles.dart';
 import '../constants/colors.dart';
 import '../services/inspection_draft_storage.dart';
@@ -47,10 +51,11 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _showFlatOptions = false;
   _InspectionMode? _inspectionMode;
   String? _inspectionPlan;
-  bool _showPropertyFields = false;
   int _dashboardStep = 0;
   List<SubmittedInspectionReport> _dashboardReports = const [];
   bool _isLoadingDashboardStats = false;
+  Timer? _dashboardRefreshTimer;
+  RealtimeChannel? _realtimeChannel;
   int _societyLoadToken = 0;
   int _blockLoadToken = 0;
   int _flatLoadToken = 0;
@@ -86,6 +91,7 @@ class _SignInScreenState extends State<SignInScreen> {
     if (_authenticatedInspector != null) {
       _restoreStartFlow();
       _loadDashboardStats();
+      _startDashboardRefresh();
     }
   }
 
@@ -116,7 +122,6 @@ class _SignInScreenState extends State<SignInScreen> {
       _societyController.text = _selectedSociety?.name ?? '';
       _blockController.text = _selectedBlock?.name ?? '';
       _flatController.text = _selectedFlat?.name ?? '';
-      _showPropertyFields = _dashboardStep == 3;
     });
   }
 
@@ -165,31 +170,68 @@ class _SignInScreenState extends State<SignInScreen> {
         inspectorMobile: InspectionSession.mobileNumber,
         limit: 100,
       );
-      final local = await InspectionDraftStorage.loadSubmittedReports();
-      final reports = <String, SubmittedInspectionReport>{};
-      for (final report in [...remote, ...local]) {
-        reports[report.inspectionId] = report;
-      }
       if (!mounted) return;
       setState(() {
-        _dashboardReports = reports.values.toList()
+        _dashboardReports = remote
           ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
       });
     } catch (_) {
-      final local = await InspectionDraftStorage.loadSubmittedReports();
-      if (mounted) {
-        setState(() {
-          _dashboardReports = local
-            ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-        });
-      }
+      // Keep the last server result visible. Dashboard statistics intentionally
+      // never use device-local submissions because they must match everywhere.
     } finally {
       if (mounted) setState(() => _isLoadingDashboardStats = false);
     }
   }
 
+  void _startDashboardRefresh() {
+    _dashboardRefreshTimer?.cancel();
+    // Fallback poll every 60 s for deployments where realtime is not enabled.
+    _dashboardRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (_authenticatedInspector != null && _dashboardStep == 0) {
+        _loadDashboardStats();
+      }
+    });
+
+    // Supabase realtime — triggers an immediate stats reload on any
+    // INSERT / UPDATE to the inspections or individual_inspections tables.
+    try {
+      _realtimeChannel?.unsubscribe();
+      _realtimeChannel = Supabase.instance.client
+          .channel('kepr_inspector_stats')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'inspections',
+            callback: (_) {
+              if (mounted && _dashboardStep == 0) _loadDashboardStats();
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'inspections',
+            callback: (_) {
+              if (mounted && _dashboardStep == 0) _loadDashboardStats();
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'individual_inspections',
+            callback: (_) {
+              if (mounted && _dashboardStep == 0) _loadDashboardStats();
+            },
+          )
+          .subscribe();
+    } catch (_) {
+      // Realtime not configured — the 60 s timer fallback is sufficient.
+    }
+  }
+
   @override
   void dispose() {
+    _dashboardRefreshTimer?.cancel();
+    _realtimeChannel?.unsubscribe();
     _mobileController.dispose();
     _passwordController.dispose();
     _societyController.dispose();
@@ -405,47 +447,64 @@ class _SignInScreenState extends State<SignInScreen> {
     final canContinue = _inspectionMode != null && _inspectionPlan != null;
     return Scaffold(
       backgroundColor: AppColors.neutral50,
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: AppColors.coral,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: _dashboardStep == 0
-            ? null
-            : IconButton(
-                tooltip: 'Back',
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _previousDashboardStep,
-              ),
-        title: Row(
-          children: [
-            const KeprLogo(size: 38),
-            const SizedBox(width: 10),
-            const Text(
-              'Kepr',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _openProfile,
-            tooltip: 'Profile',
-            icon: CircleAvatar(
-              radius: 17,
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.coral,
-              child: Text(
-                _inspectorInitials(inspector.displayName),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: AppColors.lightHero,
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
             ),
           ),
-          const SizedBox(width: 8),
-        ],
+          child: AppBar(
+            automaticallyImplyLeading: false,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            leading: _dashboardStep == 0
+                ? null
+                : IconButton(
+                    tooltip: 'Back',
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: _previousDashboardStep,
+                  ),
+            title: Row(
+              children: [
+                const KeprLogo(size: 38),
+                const SizedBox(width: 10),
+                const Text(
+                  'Kepr',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                onPressed: _showDashboardNavigation,
+                tooltip: 'Navigation',
+                icon: const Icon(Icons.menu_rounded),
+              ),
+              IconButton(
+                onPressed: _openProfile,
+                tooltip: 'Profile',
+                icon: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: Colors.white,
+                  foregroundColor: AppColors.coral,
+                  child: Text(
+                    _inspectorInitials(inspector.displayName),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 22, 16, 32),
@@ -486,7 +545,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       setState(() {
                         _inspectionMode = null;
                         _inspectionPlan = null;
-                        _showPropertyFields = false;
+
                         _dashboardStep = 1;
                       });
                       _saveStartFlow();
@@ -550,6 +609,67 @@ class _SignInScreenState extends State<SignInScreen> {
     } else {
       _saveStartFlow();
     }
+  }
+
+  Future<void> _showDashboardNavigation() {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.dashboard_outlined),
+                title: const Text('Dashboard'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  setState(() => _dashboardStep = 0);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: const Text('Start inspection'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  setState(() {
+                    _inspectionMode = null;
+                    _inspectionPlan = null;
+
+                    _dashboardStep = 1;
+                  });
+                  _saveStartFlow();
+                },
+              ),
+              if (InspectionSession.isActive)
+                ListTile(
+                  leading: const Icon(Icons.fact_check_outlined),
+                  title: const Text('Current inspection'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const InspectionsDashboardScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('Profile'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openProfile();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildDashboardSectionTitle(String title, String step) {
@@ -642,40 +762,100 @@ class _SignInScreenState extends State<SignInScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekStart = today.subtract(Duration(days: today.weekday - 1));
-    final todayCount = _dashboardReports
-        .where((report) => !report.submittedAt.toLocal().isBefore(today))
-        .length;
-    final weekCount = _dashboardReports
-        .where((report) => !report.submittedAt.toLocal().isBefore(weekStart))
-        .length;
+    final monthStart = DateTime(now.year, now.month, 1);
+    final tomorrow = today.add(const Duration(days: 1));
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final monthEnd = DateTime(now.year, now.month + 1, 1);
+    final todayReports = _reportsBetween(today, tomorrow);
+    final weekReports = _reportsBetween(weekStart, weekEnd);
+    final monthReports = _reportsBetween(monthStart, monthEnd);
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildStatCard(
-            value: _dashboardReports.length,
-            label: 'Total',
-            icon: Icons.assignment_turned_in_outlined,
-            color: AppColors.navy,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                value: _dashboardReports.length,
+                label: 'Total',
+                sublabel: 'All time',
+                icon: Icons.assignment_turned_in_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF18181B), Color(0xFF3F3F46)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _showReportDetails(
+                  title: 'All inspections',
+                  subtitle: 'All submitted reports',
+                  reports: _dashboardReports,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildStatCard(
+                value: todayReports.length,
+                label: 'Today',
+                sublabel: _formatShortDate(today),
+                icon: Icons.today_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFE06655), Color(0xFFFF9645)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _showReportDetails(
+                  title: 'Today',
+                  subtitle: _formatLongDate(today),
+                  reports: todayReports,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            value: todayCount,
-            label: 'Today',
-            icon: Icons.today_outlined,
-            color: const Color(0xFF109A8D),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            value: weekCount,
-            label: 'This week',
-            icon: Icons.bar_chart_rounded,
-            color: const Color(0xFFF59E0B),
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                value: weekReports.length,
+                label: 'This week',
+                sublabel:
+                    '${_formatShortDate(weekStart)} – ${_formatShortDate(weekEnd.subtract(const Duration(days: 1)))}',
+                icon: Icons.date_range_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _showReportDetails(
+                  title: 'This week',
+                  subtitle:
+                      '${_formatLongDate(weekStart)} – ${_formatLongDate(weekEnd.subtract(const Duration(days: 1)))}',
+                  reports: weekReports,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildStatCard(
+                value: monthReports.length,
+                label: 'This month',
+                sublabel: '${_monthName(now.month)} ${now.year}',
+                icon: Icons.calendar_month_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00897B), Color(0xFF26A69A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _showReportDetails(
+                  title: 'This month',
+                  subtitle: '${_monthName(now.month)} ${now.year}',
+                  reports: monthReports,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -684,46 +864,83 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget _buildStatCard({
     required int value,
     required String label,
+    required String sublabel,
     required IconData icon,
-    required Color color,
+    required Gradient gradient,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 112),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.22),
-            blurRadius: 14,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.white, size: 22),
-          const SizedBox(height: 12),
-          Text(
-            '$value',
-            style: AppStyles.headlineMd.copyWith(
-              color: Colors.white,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 110),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x22000000),
+              blurRadius: 14,
+              offset: Offset(0, 6),
             ),
-          ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppStyles.labelSm.copyWith(
-              color: Colors.white.withOpacity(0.92),
-              fontWeight: FontWeight.w700,
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -6,
+              bottom: -6,
+              child:
+                  Icon(icon, size: 52, color: Colors.white.withOpacity(0.10)),
             ),
-          ),
-        ],
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: Colors.white.withOpacity(0.85), size: 20),
+                    const Spacer(),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.white.withOpacity(0.75),
+                      size: 20,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '$value',
+                  style: AppStyles.headlineMd.copyWith(
+                    color: Colors.white,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppStyles.labelSm.copyWith(
+                    color: Colors.white.withOpacity(0.95),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  sublabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppStyles.labelSm.copyWith(
+                    color: Colors.white.withOpacity(0.60),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -766,7 +983,19 @@ class _SignInScreenState extends State<SignInScreen> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              const Spacer(),
+              Text(
+                '${_formatShortDate(weekStart)} – ${_formatShortDate(weekStart.add(const Duration(days: 6)))}',
+                style: AppStyles.labelSm.copyWith(
+                  color: AppColors.neutral500,
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap a day to view reports',
+            style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
           ),
           const SizedBox(height: 18),
           SizedBox(
@@ -775,41 +1004,56 @@ class _SignInScreenState extends State<SignInScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(7, (index) {
                 final isToday = index == today.weekday - 1;
+                final day = weekStart.add(Duration(days: index));
+                final dayReports = _reportsBetween(
+                  day,
+                  day.add(const Duration(days: 1)),
+                );
                 final height =
                     counts[index] == 0 ? 5.0 : 84.0 * counts[index] / maxCount;
                 return Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        '${counts[index]}',
-                        style: AppStyles.labelSm.copyWith(
-                          color: AppColors.neutral500,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _showReportDetails(
+                      title: '${labels[index]} · ${_formatShortDate(day)}',
+                      subtitle: _formatLongDate(day),
+                      reports: dayReports,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${counts[index]}',
+                          style: AppStyles.labelSm.copyWith(
+                            color: AppColors.neutral500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        width: 18,
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: isToday
-                              ? AppColors.coral
-                              : AppColors.coral.withOpacity(0.48),
-                          borderRadius: BorderRadius.circular(8),
+                        const SizedBox(height: 4),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          width: 18,
+                          height: height,
+                          decoration: BoxDecoration(
+                            color: isToday
+                                ? AppColors.coral
+                                : AppColors.coral.withOpacity(0.48),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        labels[index],
-                        style: AppStyles.labelSm.copyWith(
-                          color:
-                              isToday ? AppColors.coral : AppColors.neutral600,
-                          fontWeight:
-                              isToday ? FontWeight.w900 : FontWeight.w600,
+                        const SizedBox(height: 7),
+                        Text(
+                          '${labels[index]} ${day.day}',
+                          style: AppStyles.labelSm.copyWith(
+                            color: isToday
+                                ? AppColors.coral
+                                : AppColors.neutral600,
+                            fontWeight:
+                                isToday ? FontWeight.w900 : FontWeight.w600,
+                            fontSize: 10,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -818,6 +1062,245 @@ class _SignInScreenState extends State<SignInScreen> {
         ],
       ),
     );
+  }
+
+  List<SubmittedInspectionReport> _reportsBetween(
+    DateTime start,
+    DateTime end,
+  ) {
+    return _dashboardReports.where((report) {
+      final submitted = report.submittedAt.toLocal();
+      return !submitted.isBefore(start) && submitted.isBefore(end);
+    }).toList(growable: false);
+  }
+
+  String _monthName(int month) => const [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ][month - 1];
+
+  String _formatShortDate(DateTime date) =>
+      '${date.day} ${_monthName(date.month).substring(0, 3)}';
+
+  String _formatLongDate(DateTime date) =>
+      '${date.day} ${_monthName(date.month)} ${date.year}';
+
+  String _formatReportTime(DateTime date) {
+    final local = date.toLocal();
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+            ? local.hour - 12
+            : local.hour;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '${_formatLongDate(local)} · $hour:$minute $period';
+  }
+
+  Future<void> _showReportDetails({
+    required String title,
+    required String subtitle,
+    required List<SubmittedInspectionReport> reports,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.86,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: AppStyles.headlineMd.copyWith(
+                            color: AppColors.navy,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$subtitle · ${reports.length} report${reports.length == 1 ? '' : 's'}',
+                          style: AppStyles.bodySm.copyWith(
+                            color: AppColors.neutral600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: reports.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.assignment_outlined,
+                              size: 44,
+                              color: AppColors.neutral400,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No inspections in this period',
+                              style: AppStyles.labelMd.copyWith(
+                                color: AppColors.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: reports.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, index) =>
+                          _buildReportDetailCard(reports[index]),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReportDetailCard(SubmittedInspectionReport report) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.neutral200),
+        boxShadow: AppColors.shadowSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.coral.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.fact_check_outlined,
+                  color: AppColors.coral,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      report.societyName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppStyles.labelMd.copyWith(
+                        color: AppColors.navy,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      report.flatNumber,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppStyles.bodySm.copyWith(
+                        color: AppColors.neutral600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.neutral100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _displayMode(report.inspectionType ?? 'flat'),
+                  style: AppStyles.labelSm.copyWith(
+                    color: AppColors.neutral700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _formatReportTime(report.submittedAt),
+            style: AppStyles.bodySm.copyWith(color: AppColors.neutral600),
+          ),
+          if ((report.propertyCode ?? '').isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              'Inspection code: ${report.propertyCode}',
+              style: AppStyles.labelSm.copyWith(color: AppColors.neutral500),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: () => _openReportPdf(report.reportUrl),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: const Text('Open PDF'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.coral,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openReportPdf(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      await _showMessage(
+        'PDF unavailable',
+        'The report PDF could not be opened. Please try again.',
+      );
+    }
   }
 
   Widget _buildPropertyFieldsCard() {
@@ -949,21 +1432,21 @@ class _SignInScreenState extends State<SignInScreen> {
         children: [
           _buildModeCard(
             mode: _InspectionMode.flat,
-            icon: Icons.apartment_outlined,
+            icon: Icons.apartment_rounded,
             title: 'Flat Property',
             subtitle: 'Society, block and flat',
           ),
           const SizedBox(height: 10),
           _buildModeCard(
             mode: _InspectionMode.society,
-            icon: Icons.business_outlined,
+            icon: Icons.location_city_rounded,
             title: 'Society',
             subtitle: 'Common areas and amenities',
           ),
           const SizedBox(height: 10),
           _buildModeCard(
             mode: _InspectionMode.individual,
-            icon: Icons.person_pin_circle_outlined,
+            icon: Icons.home_rounded,
             title: 'Individual Home',
             subtitle: 'Independent owner property',
           ),
@@ -972,6 +1455,26 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
+  // Mode-specific accent colors (Kepr-Homecare inspired)
+  static const _modeAccents = {
+    _InspectionMode.society: Color(0xFF1565C0), // deep blue — urban high-rise
+    _InspectionMode.flat: Color(0xFFE06655), // coral — KEPR brand
+    _InspectionMode.individual: Color(0xFF00897B), // teal — personal home
+  };
+
+  static const _modeUnselectedBg = {
+    _InspectionMode.society: Color(0xFFF0F4FF), // ice blue
+    _InspectionMode.flat: Color(0xFFFFF4F0), // warm cream
+    _InspectionMode.individual: Color(0xFFF0FBF5), // mint
+  };
+
+  // Large decorative icon used as a watermark in the card background
+  static const _modeDecoIcon = {
+    _InspectionMode.society: Icons.location_city,
+    _InspectionMode.flat: Icons.apartment,
+    _InspectionMode.individual: Icons.home,
+  };
+
   Widget _buildModeCard({
     required _InspectionMode mode,
     required IconData icon,
@@ -979,68 +1482,75 @@ class _SignInScreenState extends State<SignInScreen> {
     required String subtitle,
   }) {
     final selected = _inspectionMode == mode;
+    final accent = _modeAccents[mode] ?? AppColors.coral;
+    final bgColor = selected
+        ? Colors.white
+        : (_modeUnselectedBg[mode] ?? const Color(0xFFF9FBFE));
+    final decoIcon = _modeDecoIcon[mode] ?? icon;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         onTap: () {
           setState(() {
             _inspectionMode = mode;
             _inspectionPlan = null;
-            _showPropertyFields = false;
+
             _dashboardStep = 2;
           });
           _saveStartFlow();
         },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          constraints: const BoxConstraints(minHeight: 88),
+          constraints: const BoxConstraints(minHeight: 92),
           padding:
-              EdgeInsets.all(MediaQuery.of(context).size.width < 380 ? 8 : 10),
+              EdgeInsets.all(MediaQuery.of(context).size.width < 380 ? 10 : 12),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : const Color(0xFFF9FBFE),
-            borderRadius: BorderRadius.circular(8),
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? AppColors.coral : const Color(0xFFE6ECF3),
-              width: selected ? 1.4 : 1,
+              color: selected ? accent : bgColor,
+              width: selected ? 1.5 : 1,
             ),
             boxShadow: selected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color.fromRGBO(248, 95, 90, 0.20),
-                      blurRadius: 18,
-                      offset: Offset(0, 8),
+                      color: accent.withOpacity(0.18),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
                     ),
                     BoxShadow(
-                      color: Color.fromRGBO(15, 23, 42, 0.08),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
+                      color: accent.withOpacity(0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
                     ),
                   ]
-                : const [],
+                : const [
+                    BoxShadow(
+                      color: Color(0x0A000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
           ),
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
+              // Watermark building/home silhouette in the background
               Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                child: Container(
-                  height: 28,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withOpacity(selected ? 0.95 : 0.75),
-                        Colors.white.withOpacity(0),
-                      ],
-                    ),
-                  ),
+                right: -4,
+                bottom: -8,
+                child: Icon(
+                  decoIcon,
+                  size: 76,
+                  color: selected
+                      ? accent.withOpacity(0.08)
+                      : accent.withOpacity(0.06),
                 ),
               ),
+              // Content
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1048,35 +1558,44 @@ class _SignInScreenState extends State<SignInScreen> {
                   Row(
                     children: [
                       Container(
-                        width: 34,
-                        height: 34,
+                        width: 36,
+                        height: 36,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: selected
-                              ? AppColors.coral.withOpacity(0.12)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: selected
-                                ? AppColors.coral.withOpacity(0.35)
-                                : const Color(0xFFE2E8F0),
-                          ),
+                          color: selected ? accent : accent.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: accent.withOpacity(0.30),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Icon(
                           icon,
-                          size: 19,
-                          color:
-                              selected ? AppColors.coral : AppColors.neutral600,
+                          size: 18,
+                          color: selected ? Colors.white : accent,
                         ),
                       ),
                       const Spacer(),
                       AnimatedOpacity(
-                        duration: const Duration(milliseconds: 160),
+                        duration: const Duration(milliseconds: 180),
                         opacity: selected ? 1 : 0,
-                        child: const Icon(
-                          Icons.check_circle,
-                          size: 20,
-                          color: AppColors.coral,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: accent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
@@ -1087,19 +1606,19 @@ class _SignInScreenState extends State<SignInScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppStyles.labelMd.copyWith(
-                      color: AppColors.navy,
+                      color: selected ? accent : AppColors.foreground,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppStyles.labelSm.copyWith(
                       color: selected
-                          ? AppColors.neutral700
-                          : AppColors.neutral500,
+                          ? accent.withOpacity(0.75)
+                          : AppColors.foregroundMuted,
                     ),
                   ),
                 ],
@@ -1158,7 +1677,7 @@ class _SignInScreenState extends State<SignInScreen> {
       onTap: () {
         setState(() {
           _inspectionPlan = plan;
-          _showPropertyFields = true;
+
           _dashboardStep = 3;
         });
         _saveStartFlow();
@@ -1289,7 +1808,7 @@ class _SignInScreenState extends State<SignInScreen> {
         key: const ValueKey('society-only-search'),
         label: 'Society',
         hint: _isLoadingSocieties ? 'Loading societies...' : 'Search society',
-        icon: Icons.business_outlined,
+        icon: Icons.location_city_rounded,
         controller: _societyController,
         options: _societies,
         enabled: true,
@@ -1733,6 +2252,7 @@ class _SignInScreenState extends State<SignInScreen> {
       InspectionSession.lastLoginAt = DateTime.now();
       await InspectionDraftStorage.saveSession();
       await _loadDashboardStats();
+      _startDashboardRefresh();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Welcome ${login.displayName}')),

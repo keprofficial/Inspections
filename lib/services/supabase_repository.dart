@@ -685,29 +685,54 @@ class SupabaseRepository {
     ].join('/');
     var uploadedPath = storagePath;
 
-    try {
-      await client.storage.from(inspectionPhotoBucket).uploadBinary(
-            storagePath,
-            uploadBytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: false,
-            ),
-          );
-    } catch (error) {
-      try {
-        uploadedPath = fallbackStoragePath;
-        await _uploadWithRest(
-          path: fallbackStoragePath,
-          bytes: uploadBytes,
-          contentType: 'image/jpeg',
-        );
-      } catch (retryError) {
-        throw Exception(
-          'Image upload failed for bucket $inspectionPhotoBucket. '
-          'Primary error: $error. Retry error: $retryError',
-        );
+    Object? lastError;
+    bool uploaded = false;
+
+    // Up to 3 attempts on primary SDK path with backoff before falling back.
+    for (int attempt = 0; attempt < 3 && !uploaded; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: 800 * attempt));
       }
+      try {
+        await client.storage.from(inspectionPhotoBucket).uploadBinary(
+              storagePath,
+              uploadBytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: false,
+              ),
+            );
+        uploaded = true;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (!uploaded) {
+      // REST fallback with its own retry.
+      for (int attempt = 0; attempt < 2 && !uploaded; attempt++) {
+        if (attempt > 0) {
+          await Future.delayed(const Duration(milliseconds: 1200));
+        }
+        try {
+          uploadedPath = fallbackStoragePath;
+          await _uploadWithRest(
+            path: fallbackStoragePath,
+            bytes: uploadBytes,
+            contentType: 'image/jpeg',
+          );
+          uploaded = true;
+        } catch (retryError) {
+          lastError = retryError;
+        }
+      }
+    }
+
+    if (!uploaded) {
+      throw Exception(
+        'Image upload failed for bucket $inspectionPhotoBucket after retries. '
+        'Last error: $lastError',
+      );
     }
 
     final photoUrl =
@@ -948,29 +973,37 @@ class SupabaseRepository {
   }
 
   int _calculateHealthScore(List<InspectionArea> areas) {
-    var score = 100.0;
-    for (final area in areas) {
-      for (final item in area.items) {
-        if (!item.completed) continue;
-        switch ((item.severity ?? '').toLowerCase()) {
-          case 'critical':
-            score -= 2.5;
-            break;
-          case 'high':
-            score -= 1.5;
-            break;
-          case 'medium':
-            score -= 0.5;
-            break;
-          case 'low':
-            score -= 0.2;
-            break;
-          default:
-            break;
-        }
+    final completed = <InspectionItem>[
+      for (final area in areas)
+        for (final item in area.items)
+          if (item.completed) item,
+    ];
+    if (completed.isEmpty) return 100;
+
+    // Normalized penalty: average penalty per item / max possible per item.
+    // critical=4.0, high=2.5, medium=1.2, low=0.4, no-issue=0.
+    // Max possible average = 4.0 (all critical) → maps to score 0.
+    var penaltySum = 0.0;
+    for (final item in completed) {
+      switch ((item.severity ?? '').toLowerCase()) {
+        case 'critical':
+          penaltySum += 4.0;
+          break;
+        case 'high':
+          penaltySum += 2.5;
+          break;
+        case 'medium':
+          penaltySum += 1.2;
+          break;
+        case 'low':
+          penaltySum += 0.4;
+          break;
       }
     }
-    return score.clamp(0, 100).round();
+    const maxPenaltyPerItem = 4.0;
+    final avgPenalty = penaltySum / completed.length;
+    final score = 100.0 - (avgPenalty / maxPenaltyPerItem) * 100.0;
+    return score.clamp(0.0, 100.0).round();
   }
 
   Future<void> saveInspectionDraft({
@@ -1124,11 +1157,48 @@ class SupabaseRepository {
 
     final reports = <SubmittedInspectionReport>[];
 
+    final sessionToken = InspectionSession.authToken;
+    if (sessionToken != null && sessionToken.isNotEmpty) {
+      try {
+        final response = await client.rpc(
+          'inspection_app_get_submitted_reports',
+          params: {
+            'p_payload': {
+              'session_token': sessionToken,
+              'limit': limit,
+            },
+          },
+        );
+        if (response is List) {
+          return response.whereType<Map>().map((row) {
+            final data =
+                row.map((key, value) => MapEntry(key.toString(), value));
+            return SubmittedInspectionReport(
+              inspectionId: data['inspection_id']?.toString() ?? '',
+              inspectionType: data['inspection_type']?.toString() ?? 'flat',
+              propertyId: data['property_id']?.toString(),
+              societyName:
+                  data['society_name']?.toString() ?? 'Property Inspection',
+              flatNumber: data['flat_number']?.toString() ?? '-',
+              propertyCode: data['property_code']?.toString(),
+              reportUrl: data['report_url']?.toString() ?? '',
+              submittedAt: _dateFromDb(data['submitted_at']) ?? DateTime.now(),
+            );
+          }).where((report) {
+            return report.inspectionId.isNotEmpty &&
+                report.reportUrl.isNotEmpty;
+          }).toList(growable: false);
+        }
+      } catch (_) {
+        // Fall through for installations that have not run the latest RPC SQL.
+      }
+    }
+
     try {
       var query = client
           .from('inspections')
           .select(
-            'id,title,inspector_name,inspection_type,property_id,inspection_code,submitted_at,created_at,full_report_pdf_url,properties(name,property_code,type)',
+            'id,title,inspector_name,inspection_type,property_id,inspection_code,conducted_at,created_at,full_report_pdf_url,properties(name,property_code,type)',
           )
           .not('full_report_pdf_url', 'is', null);
       final name = inspectorName?.trim();
@@ -1163,7 +1233,7 @@ class SupabaseRepository {
             propertyCode: data['inspection_code']?.toString() ??
                 propertyMap['property_code']?.toString(),
             reportUrl: url,
-            submittedAt: _dateFromDb(data['submitted_at']) ??
+            submittedAt: _dateFromDb(data['conducted_at']) ??
                 _dateFromDb(data['created_at']) ??
                 DateTime.now(),
           ),

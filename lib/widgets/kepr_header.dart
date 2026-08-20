@@ -25,10 +25,18 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppBar(
-      backgroundColor: AppColors.coral,
-      elevation: 0,
-      automaticallyImplyLeading: false,
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: AppColors.lightHero,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
+      child: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
       title: Row(
         children: [
           InkWell(
@@ -71,11 +79,13 @@ class KeprHeader extends StatelessWidget implements PreferredSizeWidget {
                 onPressed: onNotificationTap,
               ),
               IconButton(
-                icon: const Icon(Icons.tune),
+                tooltip: 'Navigation',
+                icon: const Icon(Icons.menu_rounded),
                 onPressed: onMenuTap,
               ),
             ]
           : null,
+      ),
     );
   }
 }

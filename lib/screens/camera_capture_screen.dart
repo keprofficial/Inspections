@@ -38,6 +38,12 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   bool _isCapturing = false;
   String? _error;
 
+  FlashMode _flashMode = FlashMode.auto;
+  double _currentZoom = 1.0;
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+  double _baseZoom = 1.0;
+
   @override
   void initState() {
     super.initState();
@@ -74,9 +80,18 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       _controller = controller;
       await oldController?.dispose();
       await controller.initialize();
+      await controller.setFlashMode(_flashMode);
+
+      final minZoom = await controller.getMinZoomLevel();
+      final maxZoom = await controller.getMaxZoomLevel();
 
       if (!mounted) return;
-      setState(() => _isInitializing = false);
+      setState(() {
+        _isInitializing = false;
+        _minZoom = minZoom;
+        _maxZoom = maxZoom;
+        _currentZoom = minZoom;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -119,8 +134,53 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
 
   Future<void> _switchCamera() async {
     if (_cameras.length < 2 || _isInitializing || _isCapturing) return;
+    setState(() => _currentZoom = 1.0);
     await _initializeCamera((_cameraIndex + 1) % _cameras.length);
   }
+
+  Future<void> _toggleFlash() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    final next = switch (_flashMode) {
+      FlashMode.off   => FlashMode.auto,
+      FlashMode.auto  => FlashMode.torch,
+      FlashMode.torch => FlashMode.off,
+      _               => FlashMode.auto,
+    };
+    try {
+      await controller.setFlashMode(next);
+      setState(() => _flashMode = next);
+    } catch (_) {
+      // Flash not supported on this device/browser — silently ignore.
+    }
+  }
+
+  Future<void> _onScaleStart(ScaleStartDetails details) async {
+    _baseZoom = _currentZoom;
+  }
+
+  Future<void> _onScaleUpdate(ScaleUpdateDetails details) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    final newZoom = (_baseZoom * details.scale).clamp(_minZoom, _maxZoom);
+    if ((newZoom - _currentZoom).abs() < 0.05) return;
+    try {
+      await controller.setZoomLevel(newZoom);
+      setState(() => _currentZoom = newZoom);
+    } catch (_) {}
+  }
+
+  IconData get _flashIcon => switch (_flashMode) {
+        FlashMode.off   => Icons.flash_off,
+        FlashMode.torch => Icons.flash_on,
+        _               => Icons.flash_auto,
+      };
+
+  String get _flashLabel => switch (_flashMode) {
+        FlashMode.off   => 'Off',
+        FlashMode.torch => 'On',
+        _               => 'Auto',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +201,15 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
           style: AppStyles.labelMd.copyWith(color: Colors.white),
         ),
         actions: [
+          if (canPreview)
+            IconButton(
+              tooltip: 'Flash: $_flashLabel',
+              onPressed: _toggleFlash,
+              icon: Icon(_flashIcon),
+              color: _flashMode == FlashMode.torch
+                  ? AppColors.warning
+                  : Colors.white,
+            ),
           IconButton(
             tooltip: 'Switch camera',
             onPressed: _cameras.length > 1 ? _switchCamera : null,
@@ -160,6 +229,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                     : const CircularProgressIndicator(color: AppColors.coral),
               ),
             ),
+            if (canPreview && _maxZoom > _minZoom + 0.5)
+              _buildZoomIndicator(),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
@@ -179,11 +250,56 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Widget _buildPreview(CameraController controller) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(
-        aspectRatio: controller.value.aspectRatio,
-        child: CameraPreview(controller),
+    return GestureDetector(
+      onScaleStart: _onScaleStart,
+      onScaleUpdate: _onScaleUpdate,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: AspectRatio(
+          aspectRatio: controller.value.aspectRatio,
+          child: CameraPreview(controller),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoomIndicator() {
+    final percent = (_maxZoom - _minZoom) == 0
+        ? 0.0
+        : (_currentZoom - _minZoom) / (_maxZoom - _minZoom);
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.zoom_out, color: Colors.white54, size: 16),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: AppColors.coral,
+                inactiveTrackColor: Colors.white24,
+                thumbColor: Colors.white,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                trackHeight: 2,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: percent.clamp(0.0, 1.0),
+                onChanged: (value) {
+                  final zoom = _minZoom + value * (_maxZoom - _minZoom);
+                  _controller?.setZoomLevel(zoom);
+                  setState(() => _currentZoom = zoom);
+                },
+              ),
+            ),
+          ),
+          const Icon(Icons.zoom_in, color: Colors.white54, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            '${_currentZoom.toStringAsFixed(1)}x',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
       ),
     );
   }

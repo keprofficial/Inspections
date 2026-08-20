@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../constants/colors.dart';
 import '../constants/app_styles.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/kepr_logo.dart';
-import 'create_account_property_details_screen.dart';
 import 'inspections_dashboard_screen.dart';
 import 'profile_screen.dart';
 import '../services/inspection_session.dart';
@@ -152,40 +150,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                         ),
 
                         const SizedBox(height: 24),
-
-                        // Divider
-                        Divider(color: AppColors.neutral200),
-                        const SizedBox(height: 16),
-
-                        // Sign Up Link
-                        Center(
-                          child: RichText(
-                            text: TextSpan(
-                              text: 'Don\'t have an account? ',
-                              style: AppStyles.bodyMd
-                                  .copyWith(color: AppColors.neutral600),
-                              children: [
-                                TextSpan(
-                                  text: 'Create Account',
-                                  style: AppStyles.bodyMd.copyWith(
-                                    color: AppColors.coral,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  recognizer: TapGestureRecognizer()
-                                    ..onTap = () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const CreateAccountPropertyDetailsScreen(),
-                                        ),
-                                      );
-                                    },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),

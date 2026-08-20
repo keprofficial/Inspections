@@ -911,6 +911,119 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Society checklist template icon names
+-- Ensures every society area template has a recognised icon_name so the
+-- inspection app renders a proper coloured gradient icon instead of the
+-- generic fallback.  Uses ILIKE so it is safe to re-run at any time.
+-- ---------------------------------------------------------------------------
+
+alter table public.inspection_checklist_templates
+  add column if not exists icon_name text;
+
+update public.inspection_checklist_templates
+set icon_name = 'lobby'
+where inspection_kind = 'society'
+  and (name ilike '%lobby%' or name ilike '%entrance%' or name ilike '%reception%');
+
+update public.inspection_checklist_templates
+set icon_name = 'local_parking'
+where inspection_kind = 'society'
+  and (name ilike '%parking%' or name ilike '%car park%' or name ilike '%vehicle%');
+
+update public.inspection_checklist_templates
+set icon_name = 'garden'
+where inspection_kind = 'society'
+  and (name ilike '%garden%' or name ilike '%landscape%' or name ilike '%lawn%'
+       or name ilike '%outdoor%' or name ilike '%exterior%' or name ilike '%park%');
+
+update public.inspection_checklist_templates
+set icon_name = 'pool'
+where inspection_kind = 'society'
+  and (name ilike '%pool%' or name ilike '%swimming%');
+
+update public.inspection_checklist_templates
+set icon_name = 'fitness_center'
+where inspection_kind = 'society'
+  and (name ilike '%gym%' or name ilike '%fitness%' or name ilike '%gymnasium%'
+       or name ilike '%sport%');
+
+update public.inspection_checklist_templates
+set icon_name = 'clubhouse'
+where inspection_kind = 'society'
+  and (name ilike '%clubhouse%' or name ilike '%club house%'
+       or name ilike '%community hall%' or name ilike '%banquet%'
+       or name ilike '%event hall%' or name ilike '%meeting room%'
+       or name ilike '%conference%');
+
+update public.inspection_checklist_templates
+set icon_name = 'security'
+where inspection_kind = 'society'
+  and (name ilike '%security%' or name ilike '%guard%' or name ilike '%cctv%'
+       or name ilike '%surveillance%' or name ilike '%watch%');
+
+update public.inspection_checklist_templates
+set icon_name = 'fire_extinguisher'
+where inspection_kind = 'society'
+  and (name ilike '%fire%');
+
+update public.inspection_checklist_templates
+set icon_name = 'electrical_services'
+where inspection_kind = 'society'
+  and (name ilike '%electrical%' or name ilike '%electric room%'
+       or name ilike '%dg room%' or name ilike '%generator%'
+       or name ilike '%power room%' or name ilike '%transformer%'
+       or name ilike '%wiring%');
+
+update public.inspection_checklist_templates
+set icon_name = 'pump_room'
+where inspection_kind = 'society'
+  and (name ilike '%pump%' or name ilike '%sump%' or name ilike '%water tank%'
+       or name ilike '%overhead tank%' or name ilike '%plumbing%'
+       or name ilike '%water supply%' or name ilike '%drainage%');
+
+update public.inspection_checklist_templates
+set icon_name = 'staircase'
+where inspection_kind = 'society'
+  and (name ilike '%stair%');
+
+update public.inspection_checklist_templates
+set icon_name = 'elevator'
+where inspection_kind = 'society'
+  and (name ilike '%elevator%' or name ilike '%lift%');
+
+update public.inspection_checklist_templates
+set icon_name = 'rooftop'
+where inspection_kind = 'society'
+  and (name ilike '%terrace%' or name ilike '%rooftop%' or name ilike '%roof%'
+       or name ilike '%ceiling%');
+
+update public.inspection_checklist_templates
+set icon_name = 'society_office'
+where inspection_kind = 'society'
+  and (name ilike '%office%' or name ilike '%admin%' or name ilike '%management%'
+       or name ilike '%secretary%');
+
+update public.inspection_checklist_templates
+set icon_name = 'corridor'
+where inspection_kind = 'society'
+  and (name ilike '%corridor%' or name ilike '%passage%' or name ilike '%walkway%'
+       or name ilike '%pathway%');
+
+update public.inspection_checklist_templates
+set icon_name = 'apartment'
+where inspection_kind = 'society'
+  and (name ilike '%building%' or name ilike '%block%' or name ilike '%tower%'
+       or name ilike '%structure%' or name ilike '%facade%' or name ilike '%external%');
+
+-- Fall back for any remaining society templates that still have no icon_name
+update public.inspection_checklist_templates
+set icon_name = 'apartment'
+where inspection_kind = 'society'
+  and (icon_name is null or icon_name = '');
+
+-- ---------------------------------------------------------------------------
+
 revoke all on function public.inspection_app_login(jsonb) from public;
 revoke all on function public.inspection_app_start(jsonb) from public;
 revoke all on function public.inspection_app_submit_report(jsonb) from public;

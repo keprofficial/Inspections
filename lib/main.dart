@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'screens/signin_screen.dart';
@@ -15,7 +16,7 @@ Future<void> main() async {
   }
   await InspectionDraftStorage.restoreSession();
 
-  runApp(const KeprApp());
+  runApp(const ProviderScope(child: KeprApp()));
 }
 
 class KeprApp extends StatelessWidget {
