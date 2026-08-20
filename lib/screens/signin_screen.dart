@@ -10,7 +10,6 @@ import '../services/inspection_session.dart';
 import '../services/supabase_repository.dart';
 import '../widgets/kepr_button.dart';
 import '../widgets/kepr_logo.dart';
-import '../widgets/bottom_nav.dart';
 import 'inspections_dashboard_screen.dart';
 import 'profile_screen.dart';
 import 'property_details_screen.dart';
@@ -583,14 +582,6 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: _dashboardStep == 0
-          ? BottomNav(
-              activeTab: BottomNavTab.home,
-              onTabChange: (tab) {
-                if (tab == BottomNavTab.profile) _openProfile();
-              },
-            )
-          : null,
     );
   }
 
