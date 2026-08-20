@@ -80,10 +80,23 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       _controller = controller;
       await oldController?.dispose();
       await controller.initialize();
-      await controller.setFlashMode(_flashMode);
 
-      final minZoom = await controller.getMinZoomLevel();
-      final maxZoom = await controller.getMaxZoomLevel();
+      // Browser camera implementations often support preview/capture but not
+      // flash or zoom. These capabilities must not block camera startup.
+      try {
+        await controller.setFlashMode(_flashMode);
+      } catch (_) {
+        _flashMode = FlashMode.off;
+      }
+
+      var minZoom = 1.0;
+      var maxZoom = 1.0;
+      try {
+        minZoom = await controller.getMinZoomLevel();
+        maxZoom = await controller.getMaxZoomLevel();
+      } catch (_) {
+        // Keep a working 1x camera when browser zoom controls are unsupported.
+      }
 
       if (!mounted) return;
       setState(() {
@@ -93,11 +106,15 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
         _currentZoom = minZoom;
       });
     } catch (error) {
+      await _controller?.dispose();
+      _controller = null;
       if (!mounted) return;
       setState(() {
         _isInitializing = false;
-        _error =
-            'Camera unavailable. Allow camera permission and use localhost or HTTPS.';
+        _error = error is CameraException &&
+                error.code == 'CameraAccessDenied'
+            ? 'Camera permission was denied. Allow camera access in your browser settings and try again.'
+            : 'Camera unavailable. Check camera permission, close other apps using the camera, and try again.';
       });
     }
   }
