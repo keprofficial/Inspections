@@ -1360,12 +1360,6 @@ class _SignInScreenState extends State<SignInScreen> {
     return '${value[0].toUpperCase()}${value.substring(1)}';
   }
 
-  String _inspectorInitials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return 'I';
-    return parts.take(2).map((part) => part[0].toUpperCase()).join();
-  }
-
   String _dayPeriod() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'morning';
