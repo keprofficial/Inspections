@@ -484,22 +484,6 @@ class _SignInScreenState extends State<SignInScreen> {
                 tooltip: 'Navigation',
                 icon: const Icon(Icons.menu_rounded),
               ),
-              IconButton(
-                onPressed: _openProfile,
-                tooltip: 'Profile',
-                icon: CircleAvatar(
-                  radius: 17,
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.coral,
-                  child: Text(
-                    _inspectorInitials(inspector.displayName),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
               const SizedBox(width: 8),
             ],
           ),
